@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "google-auth-library": "^8.9.0",
+    "googleapis": "^129.0.0",
+    "mailgun.js": "^10.2.0",
+    "uuid": "^9.0.0"
+  }
+}

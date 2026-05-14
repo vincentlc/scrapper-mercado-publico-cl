@@ -1,0 +1,16 @@
+{
+  "buildCommand": "npm --prefix vercel-functions ci && npm --prefix vercel-functions run build || true",
+  "devCommand": "npm --prefix vercel-functions run dev",
+  "outputDirectory": "vercel-functions/api",
+  "env": {
+    "GOOGLE_SHEETS_ID": "@google_sheets_id",
+    "GOOGLE_SERVICE_ACCOUNT_JSON": "@google_service_account_json",
+    "MAILGUN_API_KEY": "@mailgun_api_key",
+    "MAILGUN_DOMAIN": "@mailgun_domain"
+  },
+  "functions": {
+    "vercel-functions/api/**/*.js": {
+      "runtime": "nodejs18.x"
+    }
+  }
+}

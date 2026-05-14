@@ -36,6 +36,7 @@ wheels/
 .env.*.local
 .venv/
 venv/
+config/*
 
 # OS
 .DS_Store

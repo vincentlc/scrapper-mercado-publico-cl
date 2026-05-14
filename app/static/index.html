@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Oferta Pública Chile Tracker</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Oferta Pública Chile Tracker</h1>
+      <p>Accede a las licitaciones públicas de Chile en tiempo real. Crea filtros personalizados y recibe alertas automáticas por email cuando encuentres oportunidades que coincidan con tus criterios.</p>
+    </header>
+
+    <main>
+      <section class="panel">
+        <h2>Filtros</h2>
+        <div class="actions">
+          <button id="updateOffers">Actualizar ofertas ahora</button>
+          <span id="updateStatus"></span>
+        </div>
+        <div class="grid">
+          <label>Palabra clave<input id="keyword" placeholder="ej: software, infraestructura" /></label>
+          <label>Tipo oferta<select id="tipo_oferta"><option value="">Todas</option></select></label>
+          <label>Rango UTM
+            <select id="utm_range">
+              <option value="">Todos</option>
+              <option value="lt100">Inferior a 100 UTM</option>
+              <option value="100_1000">100 a 1.000 UTM</option>
+              <option value="1000_2000">1.000 a 2.000 UTM</option>
+              <option value="2000_5000">2.000 a 5.000 UTM</option>
+              <option value="gt5000">Mayor a 5.000 UTM</option>
+            </select>
+          </label>
+          <label>Organismo<select id="organismo"><option value="">Todos</option></select></label>
+          <label>Region<select id="region"><option value="">Todas</option></select></label>
+          <label>Comuna<select id="comuna"><option value="">Todas</option></select></label>
+          <label>Desde publicacion<input id="start_date" type="date" /></label>
+          <label>Hasta publicacion<input id="end_date" type="date" /></label>
+          <label>Desde cierre<input id="start_close_date" type="date" /></label>
+          <label>Hasta cierre<input id="end_close_date" type="date" /></label>
+        </div>
+        <div class="actions">
+          <button id="applyFilters">Aplicar filtros</button>
+          <button id="clearFilters" class="ghost">Limpiar</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Filtros guardados</h2>
+        <div class="actions">
+          <input id="savedFilterName" placeholder="Nombre del filtro" />
+          <button id="saveFilter">Guardar filtro actual</button>
+        </div>
+        <ul id="savedFilters"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>Resultados (<span id="resultCount">0</span>)</h2>
+        <div class="table-wrap">
+          <table>
+          <thead>
+            <tr>
+              <th>Codigo</th>
+              <th>Nombre</th>
+              <th>Descripcion</th>
+              <th>Descripcion producto</th>
+              <th>Organismo</th>
+              <th>Tipo</th>
+              <th>Region</th>
+              <th>Publicacion</th>
+            </tr>
+          </thead>
+          <tbody id="resultsTable"></tbody>
+          </table>
+        </div>
+        <div id="resultsCards" class="results-cards"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-content">
+        <p>&copy; 2024 Oferta Pública Chile Tracker</p>
+        <div class="footer-links">
+          <a href="https://github.com/vincentlc/scrapper-mercado-publico-cl" target="_blank" rel="noopener noreferrer">
+            <span>📄 Código fuente</span>
+          </a>
+          <a href="https://www.linkedin.com/in/vincent-lec/" target="_blank" rel="noopener noreferrer">
+            <span>👤 LinkedIn del autor</span>
+          </a>
+        </div>
+      </div>
+    </footer>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

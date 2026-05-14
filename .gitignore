@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+data/licitaciones.db
+data/*.csv
+data/*.log
+.requirements.sha256
+.setup.done
+docs/PASO_1_SCHEMA_SHEETS.md
+
+# Logs
+*.log
+
+# Node (si lo usamos después)
+node_modules/
+npm-debug.log

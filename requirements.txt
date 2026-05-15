@@ -1,10 +1,19 @@
-fastapi
-uvicorn
-requests
-python-multipart
+fastapi==0.104.1
+uvicorn==0.24.0
 requests==2.31.0
+python-multipart==0.0.6
+
+# Google Sheets API
 google-auth-oauthlib==1.1.0
 google-auth-httplib2==0.2.0
 google-api-python-client==2.108.0
-python-decouple==3.8
 gspread==5.12.0
+
+# Configuration
+python-decouple==3.8
+
+# Testing
+pytest==7.4.4
+pytest-mock==3.12.0
+pytest-cov==4.1.0
+

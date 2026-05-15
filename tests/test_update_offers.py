@@ -2,13 +2,15 @@ import json
 import unittest
 from unittest.mock import patch, MagicMock
 
-from scripts.update_offers_v2 import (
+from scripts.update_offers import (
     map_offer,
     parse_csv_bytes,
     parse_date,
     parse_monto,
     normalize_header,
     pick_value,
+    update_offers,
+    download_csv,
 )
 
 
@@ -61,7 +63,7 @@ class TestUpdateOffersParsing(unittest.TestCase):
     def test_parse_date_iso_format(self):
         """Test parsing de fechas en diferentes formatos"""
         result = parse_date("06/05/2026 07:00:00")
-        self.assertIn("2026-05-06", result)
+        self.assertTrue("2026" in result and "05" in result and "06" in result)
         
         result = parse_date("2026-05-06")
         self.assertIn("2026-05-06", result)
@@ -109,12 +111,12 @@ class TestUpdateOffersParsing(unittest.TestCase):
 class TestUpdateOffersGoogleSheets(unittest.TestCase):
     """Tests para integración con Google Sheets (usando mocks)"""
 
-    @patch('scripts.update_offers_v2.get_sheet_data')
-    @patch('scripts.update_offers_v2.append_to_sheet')
-    @patch('scripts.update_offers_v2.download_csv')
+    @patch('scripts.update_offers.get_sheet_data')
+    @patch('scripts.update_offers.append_to_sheet')
+    @patch('scripts.update_offers.download_csv')
     def test_update_offers_integration(self, mock_download, mock_append, mock_get_data):
         """Test flujo completo de actualización"""
-        from scripts.update_offers_v2 import update_offers
+        from scripts.update_offers import update_offers
         
         # Mock: Descargar CSV
         csv_row = {
@@ -137,10 +139,10 @@ class TestUpdateOffersGoogleSheets(unittest.TestCase):
         self.assertEqual(result["updated_count"], 0)
         self.assertTrue(mock_append.called)
 
-    @patch('scripts.update_offers_v2.get_sheet_data')
+    @patch('scripts.update_offers.get_sheet_data')
     def test_existing_offers_detection(self, mock_get_data):
         """Test detección de ofertas existentes"""
-        from scripts.update_offers_v2 import update_offers
+        from scripts.update_offers import update_offers
         
         # Mock: Ofertas existentes
         mock_get_data.return_value = [

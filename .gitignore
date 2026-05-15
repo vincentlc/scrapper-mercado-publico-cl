@@ -48,7 +48,6 @@ data/*.csv
 data/*.log
 .requirements.sha256
 .setup.done
-docs/PASO_1_SCHEMA_SHEETS.md
 
 # Logs
 *.log

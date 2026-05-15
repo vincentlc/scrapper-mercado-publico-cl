@@ -15,6 +15,29 @@ header {
   padding: 24px;
 }
 
+header .header-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 12px;
+}
+
+header .btn-register {
+  display: inline-block;
+  background: white;
+  color: #175cd3;
+  padding: 10px 16px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+header .btn-register:hover {
+  background: #f0f4f9;
+  transform: translateY(-2px);
+}
+
 main {
   max-width: 1480px;
   margin: 16px auto;
@@ -61,6 +84,11 @@ button {
 button.ghost {
   background: #eaecf0;
   color: #344054;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .actions {
@@ -165,6 +193,18 @@ th {
 
 .offer-card p {
   margin: 6px 0;
+}
+
+.offer-card a {
+  display: inline-block;
+  margin-top: 8px;
+  color: #175cd3;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.offer-card a:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 900px) {

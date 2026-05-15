@@ -292,7 +292,6 @@ requests==2.31.0
 google-auth-oauthlib==1.1.0
 google-auth-httplib2==0.2.0
 google-api-python-client==2.108.0
-mailgun-validator==0.5.0
 python-decouple==3.8
 gspread==5.12.0
 ```
@@ -302,97 +301,6 @@ Ejecutar:
 pip install -r requirements.txt
 ```
 
-### 4.2 Crear `scripts/helpers.py`
-
-```python
-import json
-import os
-from datetime import datetime, timedelta
-from google.auth.transport.requests import Request
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-
-def get_sheets_client():
-    """Obtener cliente de Google Sheets API"""
-    creds_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
-    
-    if not creds_json:
-        raise ValueError("GOOGLE_SERVICE_ACCOUNT_JSON no configurado")
-    
-    # Decodificar base64 si es necesario
-    import base64
-    try:
-        creds_dict = json.loads(base64.b64decode(creds_json))
-    except:
-        creds_dict = json.loads(creds_json)
-    
-    creds = Credentials.from_service_account_info(
-        creds_dict,
-        scopes=['https://www.googleapis.com/auth/spreadsheets']
-    )
-    
-    return build('sheets', 'v4', credentials=creds)
-
-def append_to_sheet(sheet_name, values):
-    """Agregar fila a una hoja"""
-    service = get_sheets_client()
-    spreadsheet_id = os.environ.get('GOOGLE_SHEETS_ID')
-    
-    service.spreadsheets().values().append(
-        spreadsheetId=spreadsheet_id,
-        range=f'{sheet_name}!A:Z',
-        valueInputOption='RAW',
-        body={'values': [values]}
-    ).execute()
-
-def get_sheet_data(sheet_name):
-    """Obtener todos los datos de una hoja"""
-    service = get_sheets_client()
-    spreadsheet_id = os.environ.get('GOOGLE_SHEETS_ID')
-    
-    result = service.spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id,
-        range=f'{sheet_name}!A:Z'
-    ).execute()
-    
-    return result.get('values', [])
-
-def clean_old_offers():
-    """Borrar ofertas sin actualización > 30 días"""
-    service = get_sheets_client()
-    spreadsheet_id = os.environ.get('GOOGLE_SHEETS_ID')
-    
-    rows = get_sheet_data('ofertas')
-    headers = rows[0]
-    updated_at_idx = headers.index('updated_at')
-    
-    cutoff_date = (datetime.now() - timedelta(days=30)).isoformat()
-    rows_to_delete = []
-    
-    for i, row in enumerate(rows[1:], start=2):  # start=2 porque row 1 es header
-        if len(row) > updated_at_idx and row[updated_at_idx] < cutoff_date:
-            rows_to_delete.append(i)
-    
-    # Borrar filas (de atrás hacia adelante para no mover índices)
-    for row_idx in reversed(rows_to_delete):
-        service.spreadsheets().batchUpdate(
-            spreadsheetId=spreadsheet_id,
-            body={
-                'requests': [{
-                    'deleteDimension': {
-                        'range': {
-                            'sheetId': get_sheet_id('ofertas'),
-                            'dimension': 'ROWS',
-                            'startIndex': row_idx - 1,
-                            'endIndex': row_idx
-                        }
-                    }
-                }]
-            }
-        ).execute()
-    
-    return len(rows_to_delete)
-```
 
 ### 4.3 Adaptar `scripts/update_offers.py`
 
@@ -711,7 +619,7 @@ Actualizar `app/static/app.js`:
 
 ```javascript
 // Cambiar base URL de API de FastAPI local a Vercel
-const API_BASE = 'https://tu-vercel-app.vercel.app';
+const API_BASE = 'https://scrapper-mercado-publico-cl.vercel.app';
 
 // GET /api/offers
 async function loadOffers() {

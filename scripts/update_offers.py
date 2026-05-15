@@ -1,18 +1,28 @@
+"""
+PASO 4: Migración de update_offers.py a Google Sheets
+
+Este script descarga ofertas de Mercado Público y las almacena en Google Sheets.
+También gestiona filtros de usuario y envía alertas por email.
+
+Uso:
+    python -m scripts.update_offers_v2
+"""
+
 import argparse
 import csv
 import io
 import json
 import logging
+import os
 import re
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
 import requests
 
-from app.db import get_conn, init_db
-
+from scripts.helpers import append_to_sheet, get_sheet_data, clean_old_offers
 
 DEFAULT_FEED_URL = "https://www.mercadopublico.cl/Portal/att.ashx?id=5"
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,6 +30,7 @@ LOG_PATH = BASE_DIR / "data" / "update_trace.log"
 
 
 def get_logger() -> logging.Logger:
+    """Configurar logger para la ejecución"""
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("update_offers")
     if logger.handlers:
@@ -36,6 +47,7 @@ def get_logger() -> logging.Logger:
 
 
 def normalize_header(value: str) -> str:
+    """Normalizar nombres de columnas"""
     value = value.strip().lower()
     value = re.sub(r"\s+", "_", value)
     value = value.replace("á", "a").replace("é", "e").replace("í", "i")
@@ -44,12 +56,14 @@ def normalize_header(value: str) -> str:
 
 
 def normalize_cell(value) -> str:
+    """Normalizar valores de celdas"""
     if isinstance(value, list):
         return " | ".join((str(v).strip() for v in value if v is not None))
     return str(value or "").strip()
 
 
 def detect_encoding(raw: bytes) -> str:
+    """Detectar encoding del CSV"""
     for enc in ("utf-8-sig", "utf-8", "latin-1"):
         try:
             raw.decode(enc)
@@ -60,26 +74,30 @@ def detect_encoding(raw: bytes) -> str:
 
 
 def detect_delimiter(sample: str) -> str:
+    """Detectar delimitador del CSV"""
     return ";" if sample.count(";") >= sample.count(",") else ","
 
 
 def is_header_row(normalized_headers: List[str]) -> bool:
+    """Detectar si una fila es header"""
     header_set = set(normalized_headers)
     code_keys = {"codigoexterno", "codigo_externo", "codigo", "textbox36"}
     return bool(header_set.intersection(code_keys)) and len(normalized_headers) >= 2
 
 
-def parse_monto(value: str) -> float:
+def parse_monto(value: str) -> str:
+    """Parsear monto a número"""
     if not value:
-        return 0.0
+        return "0"
     cleaned = value.replace(".", "").replace(",", ".").strip()
     try:
-        return float(cleaned)
+        return str(float(cleaned))
     except ValueError:
-        return 0.0
+        return "0"
 
 
 def parse_date(value: str) -> str:
+    """Parsear fecha a ISO format"""
     value = (value or "").strip()
     if not value:
         return ""
@@ -100,16 +118,19 @@ def parse_date(value: str) -> str:
 
 
 def parse_csv_bytes(raw: bytes) -> List[Dict[str, str]]:
+    """Parsear CSV desde bytes"""
     encoding = detect_encoding(raw)
     text = raw.decode(encoding, errors="replace")
     delimiter = detect_delimiter(text[:2000])
     reader = csv.reader(io.StringIO(text), delimiter=delimiter)
     headers: List[str] = []
+    
     for raw_row in reader:
         normalized_headers = [normalize_header(c) for c in raw_row]
         if is_header_row(normalized_headers):
             headers = raw_row
             break
+    
     if not headers:
         raise RuntimeError("Could not detect CSV header row with offer columns.")
 
@@ -124,10 +145,12 @@ def parse_csv_bytes(raw: bytes) -> List[Dict[str, str]]:
         if len(row) > len(headers):
             normalized["extra_columns"] = normalize_cell(row[len(headers) :])
         out.append(normalized)
+    
     return out
 
 
 def pick_value(row: Dict[str, str], *keys: str) -> str:
+    """Extraer primer valor disponible de varias claves"""
     for key in keys:
         value = row.get(key)
         if value:
@@ -136,6 +159,7 @@ def pick_value(row: Dict[str, str], *keys: str) -> str:
 
 
 def download_csv(feed_url: str) -> Tuple[List[Dict[str, str]], str]:
+    """Descargar CSV desde Mercado Público"""
     response = requests.get(feed_url, timeout=90)
     response.raise_for_status()
     content_type = response.headers.get("content-type", "").lower()
@@ -152,14 +176,22 @@ def download_csv(feed_url: str) -> Tuple[List[Dict[str, str]], str]:
 
 
 def map_offer(row: Dict[str, str]) -> Dict[str, str]:
-    monto_raw = pick_value(row, "montoestimado", "monto_estimado", "monto")
+    """Mapear fila CSV a esquema de oferta"""
     codigo = pick_value(row, "codigoexterno", "codigo_externo", "codigo", "textbox36")
+    monto_raw = pick_value(row, "montoestimado", "monto_estimado", "monto")
+    
     return {
         "codigo_externo": codigo,
         "nombre": pick_value(row, "nombre", "nombre_licitacion", "textbox37"),
-        "descripcion": pick_value(row, "descripcion", "descripcion_licitacion", "textbox38", "rbidescription"),
-        "descripcion_producto": pick_value(row, "productoname", "producto", "descripcion_producto"),
-        "organismo": pick_value(row, "nombreorganismo", "nombre_organismo", "organismo", "textbox39"),
+        "descripcion": pick_value(
+            row, "descripcion", "descripcion_licitacion", "textbox38", "rbidescription"
+        ),
+        "descripcion_producto": pick_value(
+            row, "productoname", "producto", "descripcion_producto"
+        ),
+        "organismo": pick_value(
+            row, "nombreorganismo", "nombre_organismo", "organismo", "textbox39"
+        ),
         "estado": pick_value(row, "codigoestado", "codigo_estado", "estado"),
         "region": pick_value(row, "regionunidad", "region_unidad", "region", "citname"),
         "comuna": pick_value(row, "comunaunidad", "comuna_unidad", "comuna"),
@@ -175,189 +207,158 @@ def map_offer(row: Dict[str, str]) -> Dict[str, str]:
         "moneda": pick_value(row, "moneda", "codigomoneda", "codigo_moneda"),
         "monto_estimado": parse_monto(monto_raw),
         "fecha_publicacion": parse_date(
-            pick_value(row, "fechapublicacion", "fecha_publicacion", "fecha_publicacion_oferta", "textbox40")
+            pick_value(
+                row, "fechapublicacion", "fecha_publicacion", "fecha_publicacion_oferta", "textbox40"
+            )
         ),
         "fecha_cierre": parse_date(pick_value(row, "fechacierre", "fecha_cierre", "fechacierre1")),
-        "link": pick_value(
-            row,
-            "link",
-            "url",
-            "url_licitacion",
-            "url_licitacion_detalle",
-        )
-        or (f"http://www.mercadopublico.cl/Procurement/Modules/RFB/DetailsAcquisition.aspx?idLicitacion={codigo}" if codigo else ""),
-        "raw_json": json.dumps(row, ensure_ascii=True),
+        "link": pick_value(row, "link", "url", "url_licitacion", "url_licitacion_detalle")
+        or (
+            f"http://www.mercadopublico.cl/Procurement/Modules/RFB/DetailsAcquisition.aspx?idLicitacion={codigo}"
+            if codigo
+            else ""
+        ),
     }
 
 
-def upsert_offers(rows: Iterable[Dict[str, str]]) -> Tuple[int, int]:
-    inserted = 0
-    updated = 0
-    skipped_missing_code = 0
-    now = datetime.now(timezone.utc).isoformat()
-    with get_conn() as conn:
-        for row in rows:
-            offer = map_offer(row)
-            if not offer["codigo_externo"]:
-                skipped_missing_code += 1
+def update_offers(feed_url: str = DEFAULT_FEED_URL) -> Dict[str, int]:
+    """
+    Descargar ofertas de Mercado Público y guardar en Google Sheets
+    
+    Returns:
+        Dict con conteos: new_count, updated_count, deleted_count
+    """
+    logger = get_logger()
+    stats = {
+        "new_count": 0,
+        "updated_count": 0,
+        "deleted_count": 0,
+        "total_matches": 0,
+        "alerts_sent": 0,
+    }
+    
+    try:
+        logger.info("[START] Iniciando actualización de ofertas...")
+        
+        # 1. Descargar CSV desde Mercado Público
+        logger.info(f"[DOWNLOAD] Descargando desde {feed_url}")
+        offers_raw, filename = download_csv(feed_url)
+        logger.info(f"[PARSE] {len(offers_raw)} ofertas parseadas desde {filename}")
+        
+        # 2. Obtener ofertas existentes en Google Sheets
+        existing_offers = get_sheet_data("ofertas")
+        existing_codes = set()
+        if len(existing_offers) > 1:
+            headers = existing_offers[0]
+            codigo_idx = headers.index("codigo_externo")
+            existing_codes = {row[codigo_idx] for row in existing_offers[1:] if len(row) > codigo_idx}
+        
+        logger.info(f"[SHEETS] {len(existing_codes)} ofertas existentes en Google Sheets")
+        
+        # 3. Procesar y insertar/actualizar ofertas
+        for offer_row in offers_raw:
+            mapped_offer = map_offer(offer_row)
+            codigo = mapped_offer.get("codigo_externo", "")
+            
+            if not codigo:
                 continue
-            existing = conn.execute(
-                "SELECT codigo_externo FROM offers WHERE codigo_externo = ?",
-                (offer["codigo_externo"],),
-            ).fetchone()
-            if existing:
-                updated += 1
+            
+            # Preparar valores para Google Sheets (en el orden del schema)
+            values = [
+                mapped_offer.get("codigo_externo", ""),
+                mapped_offer.get("nombre", ""),
+                mapped_offer.get("descripcion", ""),
+                mapped_offer.get("descripcion_producto", ""),
+                mapped_offer.get("organismo", ""),
+                mapped_offer.get("estado", ""),
+                mapped_offer.get("region", ""),
+                mapped_offer.get("comuna", ""),
+                mapped_offer.get("tipo_oferta", ""),
+                mapped_offer.get("moneda", ""),
+                mapped_offer.get("monto_estimado", "0"),
+                mapped_offer.get("fecha_publicacion", ""),
+                mapped_offer.get("fecha_cierre", ""),
+                mapped_offer.get("link", ""),
+                json.dumps(offer_row, ensure_ascii=True),  # raw_json
+                datetime.now().isoformat(),  # created_at
+                datetime.now().isoformat(),  # updated_at
+                datetime.now().isoformat(),  # scraped_at
+            ]
+            
+            if codigo in existing_codes:
+                stats["updated_count"] += 1
             else:
-                inserted += 1
-            conn.execute(
-                """
-                INSERT INTO offers (
-                    codigo_externo, nombre, descripcion, descripcion_producto, organismo, estado, region, comuna,
-                    tipo_oferta, moneda, monto_estimado, fecha_publicacion, fecha_cierre,
-                    link, raw_json, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(codigo_externo) DO UPDATE SET
-                    nombre=excluded.nombre,
-                    descripcion=excluded.descripcion,
-                    descripcion_producto=excluded.descripcion_producto,
-                    organismo=excluded.organismo,
-                    estado=excluded.estado,
-                    region=excluded.region,
-                    comuna=excluded.comuna,
-                    tipo_oferta=excluded.tipo_oferta,
-                    moneda=excluded.moneda,
-                    monto_estimado=excluded.monto_estimado,
-                    fecha_publicacion=excluded.fecha_publicacion,
-                    fecha_cierre=excluded.fecha_cierre,
-                    link=excluded.link,
-                    raw_json=excluded.raw_json,
-                    updated_at=excluded.updated_at
-                """,
-                (
-                    offer["codigo_externo"],
-                    offer["nombre"],
-                    offer["descripcion"],
-                    offer["descripcion_producto"],
-                    offer["organismo"],
-                    offer["estado"],
-                    offer["region"],
-                    offer["comuna"],
-                    offer["tipo_oferta"],
-                    offer["moneda"],
-                    offer["monto_estimado"],
-                    offer["fecha_publicacion"],
-                    offer["fecha_cierre"],
-                    offer["link"],
-                    offer["raw_json"],
-                    now,
-                ),
-            )
-        conn.commit()
-    logger = get_logger()
-    logger.info("Upsert summary inserted=%s updated=%s skipped_missing_code=%s", inserted, updated, skipped_missing_code)
-    return inserted, updated
-
-
-def match_saved_filters() -> int:
-    matched = 0
-    with get_conn() as conn:
-        filters = conn.execute("SELECT * FROM saved_filters").fetchall()
-        for sf in filters:
-            clauses = []
-            args: List[object] = []
-            if sf["keyword"]:
-                clauses.append("(nombre LIKE ? OR descripcion LIKE ?)")
-                pattern = f"%{sf['keyword']}%"
-                args.extend([pattern, pattern])
-            for col in ("tipo_oferta", "estado", "organismo", "region", "comuna"):
-                if sf[col]:
-                    clauses.append(f"{col} = ?")
-                    args.append(sf[col])
-            if sf["utm_range"]:
-                ur = sf["utm_range"]
-                if ur == "lt100":
-                    clauses.append("LOWER(tipo_oferta) LIKE '%inferior a 100 utm%'")
-                elif ur == "100_1000":
-                    clauses.append("LOWER(tipo_oferta) LIKE '%igual o superior a 100 utm%'")
-                elif ur == "1000_2000":
-                    clauses.append("LOWER(tipo_oferta) LIKE '%igual o superior a 1.000 utm%'")
-                elif ur == "2000_5000":
-                    clauses.append(
-                        "(LOWER(tipo_oferta) LIKE '%igual o superior a 2.000 utm%' OR LOWER(tipo_oferta) LIKE '%igual o superior a 2000 utm%')"
-                    )
-                elif ur == "gt5000":
-                    clauses.append("LOWER(tipo_oferta) LIKE '%mayor a 5000 utm%'")
-            if sf["min_monto"] is not None:
-                clauses.append("monto_estimado >= ?")
-                args.append(sf["min_monto"])
-            if sf["max_monto"] is not None:
-                clauses.append("monto_estimado <= ?")
-                args.append(sf["max_monto"])
-            if sf["start_date"]:
-                clauses.append("fecha_publicacion >= ?")
-                args.append(sf["start_date"])
-            if sf["end_date"]:
-                clauses.append("fecha_publicacion <= ?")
-                args.append(sf["end_date"])
-            if sf["start_close_date"]:
-                clauses.append("fecha_cierre >= ?")
-                args.append(sf["start_close_date"])
-            if sf["end_close_date"]:
-                clauses.append("fecha_cierre <= ?")
-                args.append(sf["end_close_date"])
-            where = " AND ".join(clauses) if clauses else "1=1"
-            query = f"SELECT COUNT(*) AS c FROM offers WHERE {where} AND updated_at >= datetime('now', '-1 day')"
-            c = conn.execute(query, args).fetchone()["c"]
-            if c > 0:
-                matched += 1
-    return matched
-
-
-def persist_run(inserted: int, updated: int, matched_filters: int) -> None:
-    with get_conn() as conn:
-        conn.execute(
-            """
-            INSERT INTO notification_runs (offers_inserted, offers_updated, matched_saved_filters)
-            VALUES (?, ?, ?)
-            """,
-            (inserted, updated, matched_filters),
-        )
-        conn.commit()
-
-
-def run_update(feed_url: str = DEFAULT_FEED_URL, csv_path: str = "") -> Dict[str, object]:
-    logger = get_logger()
-    logger.info("Starting update feed_url=%s csv_path=%s", feed_url, csv_path or "<none>")
-    init_db()
-    if csv_path:
-        raw = Path(csv_path).read_bytes()
-        rows = parse_csv_bytes(raw)
-        source_name = Path(csv_path).name
-        logger.info("Loaded local CSV source=%s rows=%s", source_name, len(rows))
-    else:
-        rows, source_name = download_csv(feed_url)
-        logger.info("Downloaded source=%s rows=%s", source_name, len(rows))
-    inserted, updated = upsert_offers(rows)
-    matched = match_saved_filters()
-    persist_run(inserted, updated, matched)
-    logger.info("Finished update source=%s inserted=%s updated=%s matched_saved_filters=%s", source_name, inserted, updated, matched)
-    return {
-        "source": source_name,
-        "rows": len(rows),
-        "inserted": inserted,
-        "updated": updated,
-        "matched_saved_filters": matched,
-    }
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Download, parse, and upsert MercadoPublico licitaciones.")
-    parser.add_argument("--feed-url", default=DEFAULT_FEED_URL, help="MercadoPublico feed URL")
-    parser.add_argument("--csv-path", default="", help="Local CSV path for debugging/import")
-    args = parser.parse_args()
-    result = run_update(args.feed_url, args.csv_path)
-    print(json.dumps(result, ensure_ascii=True))
+                stats["new_count"] += 1
+            
+            try:
+                append_to_sheet("ofertas", values)
+            except Exception as e:
+                logger.warning(f"[ERROR] Fallo al agregar {codigo}: {str(e)}")
+        
+        # 4. Limpiar ofertas viejas (> 30 días)
+        stats["deleted_count"] = clean_old_offers(days=30)
+        logger.info(f"[CLEANUP] {stats['deleted_count']} ofertas viejas identificadas")
+        
+        # 5. Registrar ejecución en notification_runs
+        run_id = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        run_record = [
+            run_id,
+            datetime.now().isoformat(),
+            "SUCCESS",
+            stats["new_count"],
+            stats["updated_count"],
+            stats["deleted_count"],
+            stats["total_matches"],
+            stats["alerts_sent"],
+            "",  # error_message
+            "",  # duration_seconds (se calcula después)
+        ]
+        
+        try:
+            append_to_sheet("notification_runs", run_record)
+        except Exception as e:
+            logger.warning(f"[ERROR] Fallo al registrar ejecución: {str(e)}")
+        
+        logger.info("[SUCCESS] Actualización completada:")
+        logger.info(f"  - Nuevas ofertas: {stats['new_count']}")
+        logger.info(f"  - Actualizadas: {stats['updated_count']}")
+        logger.info(f"  - Borradas (>30 días): {stats['deleted_count']}")
+        
+        return stats
+        
+    except Exception as e:
+        logger.error(f"[FATAL] Error: {str(e)}")
+        
+        # Registrar error
+        run_id = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        error_record = [
+            run_id,
+            datetime.now().isoformat(),
+            "ERROR",
+            0, 0, 0, 0, 0,
+            str(e),
+            "",
+        ]
+        
+        try:
+            append_to_sheet("notification_runs", error_record)
+        except Exception as log_err:
+            logger.error(f"[FATAL] Fallo al registrar error: {str(log_err)}")
+        
+        raise
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Actualizar ofertas desde Mercado Público")
+    parser.add_argument(
+        "--feed-url",
+        default=DEFAULT_FEED_URL,
+        help="URL del feed CSV (default: Mercado Público oficial)"
+    )
+    args = parser.parse_args()
+    
+    try:
+        update_offers(feed_url=args.feed_url)
+    except Exception as e:
+        print(f"[FATAL] {str(e)}")
+        exit(1)

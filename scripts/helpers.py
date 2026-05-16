@@ -38,6 +38,23 @@ def append_to_sheet(sheet_name, values):
         body={'values': [values]}
     ).execute()
 
+def append_many_rows(sheet_name, rows):
+    """Agregar múltiples filas en una sola request"""
+    
+    if not rows:
+        return
+    
+    service = get_sheets_client()
+    spreadsheet_id = os.environ.get('GOOGLE_SHEETS_ID')
+    
+    service.spreadsheets().values().append(
+        spreadsheetId=spreadsheet_id,
+        range=f'{sheet_name}!A:Z',
+        valueInputOption='RAW',
+        insertDataOption='INSERT_ROWS',
+        body={'values': rows}
+    ).execute()
+
 def get_sheet_data(sheet_name):
     """Obtener todos los datos de una hoja"""
     service = get_sheets_client()

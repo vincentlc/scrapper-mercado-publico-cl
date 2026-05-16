@@ -16,17 +16,24 @@ import logging
 import os
 import re
 import zipfile
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
 import requests
 
-from scripts.helpers import append_to_sheet, get_sheet_data, clean_old_offers
+from scripts.helpers import (
+    append_to_sheet,
+    append_many_rows,
+    get_sheet_data,
+    clean_old_offers
+)
 
 DEFAULT_FEED_URL = "https://www.mercadopublico.cl/Portal/att.ashx?id=5"
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOG_PATH = BASE_DIR / "data" / "update_trace.log"
+BATCH_SIZE = 200
 
 
 def get_logger() -> logging.Logger:
@@ -221,87 +228,138 @@ def map_offer(row: Dict[str, str]) -> Dict[str, str]:
     }
 
 
-def update_offers(feed_url: str = DEFAULT_FEED_URL) -> Dict[str, int]:
-    """
-    Descargar ofertas de Mercado Público y guardar en Google Sheets
-    
-    Returns:
-        Dict con conteos: new_count, updated_count, deleted_count
-    """
-    logger = get_logger()
+def update_offers(feed_url: str = DEFAULT_FEED_URL):
+    """Descargar ofertas de Mercado Público y guardar en Google Sheets"""
+
     stats = {
         "new_count": 0,
         "updated_count": 0,
         "deleted_count": 0,
         "total_matches": 0,
-        "alerts_sent": 0,
+        "total_alerts_sent": 0,
     }
-    
+
+    start_time = time.time()
+
     try:
-        logger.info("[START] Iniciando actualización de ofertas...")
-        
-        # 1. Descargar CSV desde Mercado Público
-        logger.info(f"[DOWNLOAD] Descargando desde {feed_url}")
-        offers_raw, filename = download_csv(feed_url)
-        logger.info(f"[PARSE] {len(offers_raw)} ofertas parseadas desde {filename}")
-        
-        # 2. Obtener ofertas existentes en Google Sheets
+
+        print("[INFO] Iniciando actualización de ofertas...")
+
+        # DESCARGAR CSV
+        offers_data, filename = download_csv(feed_url)
+
+        print(
+            f"[INFO] Mercado Público retornó {len(offers_data)} filas desde {filename}"
+        )
+
+        # MAPEAR OFERTAS
+        offers_raw = [map_offer(row) for row in offers_data]
+
+        print(f"[INFO] {len(offers_raw)} ofertas mapeadas")
+
+        # OBTENER EXISTENTES
         existing_offers = get_sheet_data("ofertas")
+
         existing_codes = set()
-        if len(existing_offers) > 1:
-            headers = existing_offers[0]
-            codigo_idx = headers.index("codigo_externo")
-            existing_codes = {row[codigo_idx] for row in existing_offers[1:] if len(row) > codigo_idx}
-        
-        logger.info(f"[SHEETS] {len(existing_codes)} ofertas existentes en Google Sheets")
-        
-        # 3. Procesar y insertar/actualizar ofertas
-        for offer_row in offers_raw:
-            mapped_offer = map_offer(offer_row)
-            codigo = mapped_offer.get("codigo_externo", "")
-            
+
+        if existing_offers and len(existing_offers) > 1:
+            for row in existing_offers[1:]:
+                if row and len(row) > 0:
+                    existing_codes.add(str(row[0]).strip())
+
+        print(f"[INFO] Existen {len(existing_codes)} ofertas previas")
+
+        # DEDUPLICAR
+        unique_offers = {}
+
+        for offer in offers_raw:
+
+            codigo = offer.get("codigo_externo", "").strip()
+
             if not codigo:
                 continue
-            
-            # Preparar valores para Google Sheets (en el orden del schema)
-            values = [
-                mapped_offer.get("codigo_externo", ""),
-                mapped_offer.get("nombre", ""),
-                mapped_offer.get("descripcion", ""),
-                mapped_offer.get("descripcion_producto", ""),
-                mapped_offer.get("organismo", ""),
-                mapped_offer.get("estado", ""),
-                mapped_offer.get("region", ""),
-                mapped_offer.get("comuna", ""),
-                mapped_offer.get("tipo_oferta", ""),
-                mapped_offer.get("moneda", ""),
-                mapped_offer.get("monto_estimado", "0"),
-                mapped_offer.get("fecha_publicacion", ""),
-                mapped_offer.get("fecha_cierre", ""),
-                mapped_offer.get("link", ""),
-                json.dumps(offer_row, ensure_ascii=True),  # raw_json
-                datetime.now().isoformat(),  # created_at
-                datetime.now().isoformat(),  # updated_at
-                datetime.now().isoformat(),  # scraped_at
-            ]
-            
+
+            # mantener solo primera aparición
+            if codigo not in unique_offers:
+                unique_offers[codigo] = offer
+
+        print(
+            f"[DEDUP] {len(unique_offers)} ofertas únicas"
+        )
+
+        # PREPARAR INSERTS
+        rows_to_insert = []
+
+        now_iso = datetime.now().isoformat()
+
+        for codigo, offer in unique_offers.items():
+
+            # evitar reinsertar
             if codigo in existing_codes:
                 stats["updated_count"] += 1
-            else:
-                stats["new_count"] += 1
-            
-            try:
-                append_to_sheet("ofertas", values)
-            except Exception as e:
-                logger.warning(f"[ERROR] Fallo al agregar {codigo}: {str(e)}")
-        
-        # 4. Limpiar ofertas viejas (> 30 días)
-        stats["deleted_count"] = clean_old_offers(days=30)
-        logger.info(f"[CLEANUP] {stats['deleted_count']} ofertas viejas identificadas")
-        
-        # 5. Registrar ejecución en notification_runs
+                continue
+
+            minimal_raw = {
+                "codigo": codigo,
+                "producto": offer.get("descripcion_producto"),
+            }
+
+            values = [
+                offer.get("codigo_externo", ""),
+                offer.get("nombre", ""),
+                offer.get("descripcion", ""),
+                offer.get("descripcion_producto", ""),
+                offer.get("organismo", ""),
+                offer.get("estado", ""),
+                offer.get("region", ""),
+                offer.get("comuna", ""),
+                offer.get("tipo_oferta", ""),
+                offer.get("moneda", ""),
+                offer.get("monto_estimado", "0"),
+                offer.get("fecha_publicacion", ""),
+                offer.get("fecha_cierre", ""),
+                offer.get("link", ""),
+                json.dumps(minimal_raw, ensure_ascii=False),
+                now_iso,
+                now_iso,
+                now_iso,
+            ]
+
+            rows_to_insert.append(values)
+
+            stats["new_count"] += 1
+
+        print(
+            f"[INSERT] Preparadas {len(rows_to_insert)} nuevas ofertas"
+        )
+
+        # INSERTS POR BATCH
+        for i in range(0, len(rows_to_insert), BATCH_SIZE):
+
+            chunk = rows_to_insert[i:i + BATCH_SIZE]
+
+            print(
+                f"[BATCH] Insertando {i} - {i + len(chunk)}"
+            )
+
+            append_many_rows("ofertas", chunk)
+
+            # evitar quota exceeded
+            time.sleep(2)
+
+        # LIMPIAR ANTIGUAS
+        stats["deleted_count"] = clean_old_offers()
+
+        # ALERTAS DESACTIVADAS
+        stats["total_matches"] = 0
+        stats["total_alerts_sent"] = 0
+
+        # REGISTRAR EJECUCIÓN
+        duration = int(time.time() - start_time)
+
         run_id = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        run_record = [
+
+        append_to_sheet("notification_runs", [
             run_id,
             datetime.now().isoformat(),
             "SUCCESS",
@@ -309,42 +367,37 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL) -> Dict[str, int]:
             stats["updated_count"],
             stats["deleted_count"],
             stats["total_matches"],
-            stats["alerts_sent"],
-            "",  # error_message
-            "",  # duration_seconds (se calcula después)
-        ]
-        
-        try:
-            append_to_sheet("notification_runs", run_record)
-        except Exception as e:
-            logger.warning(f"[ERROR] Fallo al registrar ejecución: {str(e)}")
-        
-        logger.info("[SUCCESS] Actualización completada:")
-        logger.info(f"  - Nuevas ofertas: {stats['new_count']}")
-        logger.info(f"  - Actualizadas: {stats['updated_count']}")
-        logger.info(f"  - Borradas (>30 días): {stats['deleted_count']}")
-        
+            stats["total_alerts_sent"],
+            "",
+            duration,
+        ])
+
+        print("[SUCCESS] Update completado")
+        print(f"Nuevas: {stats['new_count']}")
+        print(f"Existentes: {stats['updated_count']}")
+        print(f"Borradas: {stats['deleted_count']}")
+
         return stats
-        
+
     except Exception as e:
-        logger.error(f"[FATAL] Error: {str(e)}")
-        
-        # Registrar error
-        run_id = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        error_record = [
-            run_id,
+
+        print(f"[ERROR] Fallo update_offers: {str(e)}")
+
+        duration = int(time.time() - start_time)
+
+        append_to_sheet("notification_runs", [
+            f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             datetime.now().isoformat(),
             "ERROR",
-            0, 0, 0, 0, 0,
+            stats["new_count"],
+            stats["updated_count"],
+            stats["deleted_count"],
+            stats["total_matches"],
+            stats["total_alerts_sent"],
             str(e),
-            "",
-        ]
-        
-        try:
-            append_to_sheet("notification_runs", error_record)
-        except Exception as log_err:
-            logger.error(f"[FATAL] Fallo al registrar error: {str(log_err)}")
-        
+            duration,
+        ])
+
         raise
 
 

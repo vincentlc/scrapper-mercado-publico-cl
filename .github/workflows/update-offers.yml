@@ -33,10 +33,3 @@ jobs:
         run: |
           python -m scripts.update_offers
       
-      - name: Commit results (if changes)
-        run: |
-          git config --global user.email "scraper@github.com"
-          git config --global user.name "Scraper Bot"
-          git add -A
-          git commit -m "data: update offers from Mercado Publico" || echo "No changes"
-          git push || echo "No changes to push"

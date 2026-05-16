@@ -128,7 +128,7 @@ async function loadFilterOptions() {
 // ========== RENDER OFFERS ==========
 
 function renderOffers(offers) {
-
+  console.log(data);
   const tbody = document.getElementById("resultsTable");
   const cards = document.getElementById("resultsCards");
   const count = document.getElementById("resultCount");
@@ -251,11 +251,10 @@ async function loadOffers(page = 1) {
     }
 
     const data = await res.json();
+    console.log("OFFERS RESPONSE:", data);
 
-    // IMPORTANTE:
-    // FastAPI devuelve "items", no "offers"
 
-    renderOffers(data.items || []);
+    renderOffers(data.offers || []);
 
   } catch (err) {
 

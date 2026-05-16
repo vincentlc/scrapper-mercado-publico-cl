@@ -2,7 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const { appendRow, getRows } = require('./utils/google-sheets');
 const { handleCORS } = require('./utils/auth');
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (handleCORS(req, res)) return;
   if (req.method === 'POST') {
     // Crear nuevo filtro

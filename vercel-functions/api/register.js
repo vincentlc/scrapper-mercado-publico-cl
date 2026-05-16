@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const { appendRow } = require('./utils/google-sheets');
-const { handleCORS } = require('./auth');
+const { handleCORS } = require('./utils/auth');
 
 export default async function handler(req, res) {
   if (handleCORS(req, res)) return;

@@ -1,5 +1,5 @@
 const { getRows } = require('./utils/google-sheets');
-const { handleCORS } = require('./auth');
+const { handleCORS } = require('./utils/auth');
 
 export default async function handler(req, res) {
   if (handleCORS(req, res)) return;

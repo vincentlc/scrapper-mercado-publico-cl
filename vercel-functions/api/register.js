@@ -1,7 +1,9 @@
 const { v4: uuidv4 } = require('uuid');
 const { appendRow } = require('./utils/google-sheets');
+const { handleCORS } = require('./auth');
 
 export default async function handler(req, res) {
+  if (handleCORS(req, res)) return;
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

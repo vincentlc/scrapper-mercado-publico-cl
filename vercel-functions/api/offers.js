@@ -1,6 +1,8 @@
 const { getRows } = require('./utils/google-sheets');
+const { handleCORS } = require('./utils/auth');
 
 export default async function handler(req, res) {
+  if (handleCORS(req, res)) return;
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

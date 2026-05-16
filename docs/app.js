@@ -88,7 +88,7 @@ async function loadFilterOptions() {
 
   try {
 
-    const res = await fetch(`${API_BASE}/api/filters/options`);
+    const res = await fetch(`${API_BASE}/api/filters`);
 
     if (!res.ok) {
       console.error("Error loading filter options");

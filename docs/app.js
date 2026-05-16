@@ -267,54 +267,54 @@ async function loadOffers(page = 1) {
 // ========== SAVED FILTERS ==========
 
 async function loadSavedFilters() {
+  return;
+  // try {
 
-  try {
+  //   const res = await fetch(`${API_BASE}/api/saved-filters`);
 
-    const res = await fetch(`${API_BASE}/api/saved-filters`);
+  //   if (!res.ok) {
+  //     console.error("Error loading saved filters");
+  //     return;
+  //   }
 
-    if (!res.ok) {
-      console.error("Error loading saved filters");
-      return;
-    }
+  //   const data = await res.json();
 
-    const data = await res.json();
+  //   const ul = document.getElementById("savedFilters");
 
-    const ul = document.getElementById("savedFilters");
+  //   ul.innerHTML = "";
 
-    ul.innerHTML = "";
+  //   for (const item of data.items || []) {
 
-    for (const item of data.items || []) {
+  //     const li = document.createElement("li");
 
-      const li = document.createElement("li");
+  //     li.innerHTML = `
+  //       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
 
-      li.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+  //         <button
+  //           class="ghost"
+  //           onclick='loadFilter(${JSON.stringify(item).replaceAll("'", "&apos;")})'
+  //         >
+  //           ${escapeHtml(item.name)}
+  //         </button>
 
-          <button
-            class="ghost"
-            onclick='loadFilter(${JSON.stringify(item).replaceAll("'", "&apos;")})'
-          >
-            ${escapeHtml(item.name)}
-          </button>
+  //         <button
+  //           class="ghost"
+  //           onclick="deleteSavedFilter(${item.id})"
+  //         >
+  //           Borrar
+  //         </button>
 
-          <button
-            class="ghost"
-            onclick="deleteSavedFilter(${item.id})"
-          >
-            Borrar
-          </button>
+  //       </div>
+  //     `;
 
-        </div>
-      `;
+  //     ul.appendChild(li);
+  //   }
 
-      ul.appendChild(li);
-    }
+  // } catch (err) {
 
-  } catch (err) {
+  //   console.error("Error loading saved filters:", err);
 
-    console.error("Error loading saved filters:", err);
-
-  }
+  // }
 }
 
 function loadFilter(filter) {
@@ -324,81 +324,82 @@ function loadFilter(filter) {
   loadOffers();
 }
 
-async function deleteSavedFilter(id) {
+// async function deleteSavedFilter(id) {
 
-  if (!confirm("¿Borrar filtro?")) {
-    return;
-  }
+//   if (!confirm("¿Borrar filtro?")) {
+//     return;
+//   }
 
-  try {
+//   try {
 
-    const res = await fetch(
-      `${API_BASE}/api/saved-filters/${id}`,
-      {
-        method: "DELETE",
-      }
-    );
+//     const res = await fetch(
+//       `${API_BASE}/api/saved-filters/${id}`,
+//       {
+//         method: "DELETE",
+//       }
+//     );
 
-    if (res.ok) {
-      loadSavedFilters();
-    }
+//     if (res.ok) {
+//       loadSavedFilters();
+//     }
 
-  } catch (err) {
+//   } catch (err) {
 
-    console.error("Error deleting filter:", err);
+//     console.error("Error deleting filter:", err);
 
-  }
-}
+//   }
+// }
 
 async function saveFilter() {
+  alert("Guardado de filtros aún no implementado");
 
-  const name = document
-    .getElementById("savedFilterName")
-    ?.value
-    ?.trim();
+  // const name = document
+  //   .getElementById("savedFilterName")
+  //   ?.value
+  //   ?.trim();
 
-  if (!name) {
-    alert("Ingresa un nombre para el filtro");
-    return;
-  }
+  // if (!name) {
+  //   alert("Ingresa un nombre para el filtro");
+  //   return;
+  // }
 
-  const filters = getFiltersFromForm();
+  // const filters = getFiltersFromForm();
 
-  const payload = {
-    name,
-    ...filters,
-  };
+  // const payload = {
+  //   name,
+  //   ...filters,
+  // };
 
-  try {
+  // try {
 
-    const res = await fetch(
-      `${API_BASE}/api/saved-filters`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      }
-    );
+  //   const res = await fetch(
+  //     `${API_BASE}/api/saved-filters`,
+  //     {
+  //       method: "POST",
+  //       headers: {
+  //         "Content-Type": "application/json",
+  //       },
+  //       body: JSON.stringify(payload),
+  //     }
+  //   );
 
-    if (res.ok) {
+  //   if (res.ok) {
 
-      document.getElementById("savedFilterName").value = "";
+  //     document.getElementById("savedFilterName").value = "";
 
-      loadSavedFilters();
+  //     loadSavedFilters();
 
-    } else {
+  //   } else {
 
-      console.error("Error saving filter");
+  //     console.error("Error saving filter");
 
-    }
+  //   }
 
-  } catch (err) {
+  // } catch (err) {
 
-    console.error("Error saving filter:", err);
+  //   console.error("Error saving filter:", err);
 
-  }
+  // }
 }
 
 // ========== INIT ==========
@@ -433,7 +434,7 @@ document.addEventListener("DOMContentLoaded", () => {
       loadOffers();
     });
 
-  document
-    .getElementById("saveFilter")
-    ?.addEventListener("click", saveFilter);
+  // document
+  //   .getElementById("saveFilter")
+  //   ?.addEventListener("click", saveFilter);
 });

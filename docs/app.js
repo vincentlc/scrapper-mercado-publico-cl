@@ -12,6 +12,8 @@ const filterFields = [
   "end_date",
   "start_close_date",
   "end_close_date",
+  "min_days_to_close",
+  "max_days_to_close",
 ];
 
 const DESCRIPTION_PREVIEW_LENGTH = 180;
@@ -49,6 +51,29 @@ function renderExpandableText(text, maxLength = DESCRIPTION_PREVIEW_LENGTH) {
       </div>
     </details>
   `;
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return "";
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('es-CL', { 
+      year: 'numeric', 
+      month: '2-digit', 
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return String(dateStr);
+  }
+}
+
+function formatDaysRemaining(days) {
+  if (days === null || days === undefined) return "";
+  if (days === 0) return "Hoy";
+  if (days === 1) return "Mañana";
+  return `${days}d`;
 }
 
 function getFiltersFromForm() {
@@ -167,9 +192,11 @@ function renderOffers(offers) {
       <td>${renderExpandableText(offer.descripcion)}</td>
       <td>${renderExpandableText(offer.descripcion_producto)}</td>
       <td>${escapeHtml(offer.organismo)}</td>
-      <td>${escapeHtml(offer.tipo_oferta)}</td>
+      <td>${escapeHtml(offer.tipo_oferta_formateado || offer.tipo_oferta)}</td>
       <td>${escapeHtml(offer.region)}</td>
       <td>${escapeHtml(offer.fecha_publicacion)}</td>
+      <td>${formatDate(offer.fecha_cierre)}</td>
+      <td>${formatDaysRemaining(offer.dias_para_cierre)}</td>
     `;
 
     tbody.appendChild(row);
@@ -205,7 +232,7 @@ function renderOffers(offers) {
 
       <p>
         <strong>Tipo:</strong>
-        ${escapeHtml(offer.tipo_oferta)}
+        ${escapeHtml(offer.tipo_oferta_formateado || offer.tipo_oferta)}
       </p>
 
       <p>
@@ -215,7 +242,8 @@ function renderOffers(offers) {
 
       <p>
         <strong>Cierre:</strong>
-        ${escapeHtml(offer.fecha_cierre)}
+        ${formatDate(offer.fecha_cierre)}
+        ${offer.dias_para_cierre !== null && offer.dias_para_cierre !== undefined ? `<span style="color: #d9534f; font-weight: bold;"> (${formatDaysRemaining(offer.dias_para_cierre)})</span>` : ""}
       </p>
 
       ${

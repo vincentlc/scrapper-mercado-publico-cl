@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.db import get_conn, init_db
-from app.query import build_offer_filters, normalize_option_values
+from app.query import build_offer_filters, normalize_option_values, format_tipo_oferta, calculate_days_until_close
 from scripts.update_offers import run_update
 
 
@@ -27,6 +27,8 @@ class SavedFilterIn(BaseModel):
     end_date: Optional[str] = None
     start_close_date: Optional[str] = None
     end_close_date: Optional[str] = None
+    min_days_to_close: Optional[int] = None
+    max_days_to_close: Optional[int] = None
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -74,6 +76,8 @@ def list_offers(
     end_date: Optional[str] = None,
     start_close_date: Optional[str] = None,
     end_close_date: Optional[str] = None,
+    min_days_to_close: Optional[int] = None,
+    max_days_to_close: Optional[int] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ) -> Dict[str, object]:
@@ -91,6 +95,8 @@ def list_offers(
         end_date=end_date,
         start_close_date=start_close_date,
         end_close_date=end_close_date,
+        min_days_to_close=min_days_to_close,
+        max_days_to_close=max_days_to_close,
     )
     offset = (page - 1) * page_size
     with get_conn() as conn:
@@ -105,6 +111,12 @@ def list_offers(
             [*args, page_size, offset],
         ).fetchall()
         items = [dict(r) for r in rows]
+    
+    # Enriquecer datos con tipo formateado y días restantes
+    for item in items:
+        item["tipo_oferta_formateado"] = format_tipo_oferta(item.get("tipo_oferta", ""))
+        item["dias_para_cierre"] = calculate_days_until_close(item.get("fecha_cierre", ""))
+    
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
@@ -136,8 +148,9 @@ def create_saved_filter(payload: SavedFilterIn) -> Dict[str, object]:
                 """
                 INSERT INTO saved_filters (
                     name, keyword, tipo_oferta, estado, organismo, region, comuna,
-                    utm_range, min_monto, max_monto, start_date, end_date, start_close_date, end_close_date
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    utm_range, min_monto, max_monto, start_date, end_date, start_close_date, end_close_date,
+                    min_days_to_close, max_days_to_close
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload.name,
@@ -154,6 +167,8 @@ def create_saved_filter(payload: SavedFilterIn) -> Dict[str, object]:
                     payload.end_date,
                     payload.start_close_date,
                     payload.end_close_date,
+                    payload.min_days_to_close,
+                    payload.max_days_to_close,
                 ),
             )
             conn.commit()

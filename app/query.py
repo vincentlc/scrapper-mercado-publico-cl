@@ -1,4 +1,57 @@
 from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+
+
+def is_less_than_100_utm(tipo_oferta: str) -> bool:
+    """Verificar si una licitación es <100 UTM"""
+    if not tipo_oferta:
+        return False
+    tipo_lower = tipo_oferta.lower()
+    return "inferior a 100 utm" in tipo_lower
+
+
+def format_tipo_oferta(tipo_oferta: str) -> str:
+    """Formatear tipo de oferta agregando (compra ágil) si es <100 UTM"""
+    if not tipo_oferta:
+        return ""
+    
+    if is_less_than_100_utm(tipo_oferta):
+        # Si ya tiene "(compra ágil)", no duplicar
+        if "(compra ágil)" in tipo_oferta.lower():
+            return tipo_oferta
+        return f"{tipo_oferta} (compra ágil)"
+    
+    return tipo_oferta
+
+
+def calculate_days_until_close(fecha_cierre: str) -> Optional[int]:
+    """Calcular días restantes hasta cierre de la licitación"""
+    if not fecha_cierre:
+        return None
+    
+    try:
+        # Soporta formatos ISO, datetime con o sin hora
+        close_date = None
+        for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+            try:
+                close_date = datetime.strptime(fecha_cierre[:19], fmt)
+                break
+            except ValueError:
+                continue
+        
+        if not close_date:
+            return None
+        
+        now = datetime.now()
+        delta = close_date - now
+        days = delta.days
+        
+        # Si falta menos de 1 día pero aún no cerró, mostrar 0
+        if days < 0:
+            return None  # Ya cerró
+        return max(0, days)
+    except Exception:
+        return None
 
 
 def build_offer_filters(
@@ -15,6 +68,8 @@ def build_offer_filters(
     end_date: Optional[str] = None,
     start_close_date: Optional[str] = None,
     end_close_date: Optional[str] = None,
+    min_days_to_close: Optional[int] = None,
+    max_days_to_close: Optional[int] = None,
 ) -> Tuple[str, List[object]]:
     where: List[str] = []
     args: List[object] = []
@@ -69,6 +124,20 @@ def build_offer_filters(
     if end_close_date:
         where.append("fecha_cierre <= ?")
         args.append(end_close_date)
+    
+    # Filtros por días restantes para cierre
+    # Usa DATETIME para calcular la diferencia
+    if min_days_to_close is not None:
+        # fecha_cierre debe estar al menos min_days_to_close días en el futuro
+        # datetime('now', '+X days') retorna la fecha en X días
+        where.append("fecha_cierre > datetime('now', ? || ' days')")
+        args.append(min_days_to_close - 1)  # -1 porque queremos >= min_days
+    
+    if max_days_to_close is not None:
+        # fecha_cierre debe estar como máximo max_days_to_close días en el futuro
+        # Esto significa: cierre <= hoy + max_days
+        where.append("fecha_cierre <= datetime('now', ? || ' days')")
+        args.append(max_days_to_close)
 
     return (" AND ".join(where) if where else "1=1"), args
 

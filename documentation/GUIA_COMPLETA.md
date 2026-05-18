@@ -1,103 +1,594 @@
-# 🚀 GUÍA COMPLETA: Migración a Arquitectura Serverless (100% Online)
+# � GUÍA COMPLETA: ScrapMercadoPublico
 
-**Tabla de Contenidos:**
-- [Paso 1: Schema Google Sheets](#paso-1-schema-google-sheets)
-- [Paso 2: Google Cloud Setup](#paso-2-google-cloud-setup)
-- [Paso 3: Vercel Functions (Backend)](#paso-3-vercel-functions-backend)
-- [Paso 4: Migración Script Python](#paso-4-migración-script-python)
-- [Paso 5: GitHub Actions Workflow](#paso-5-github-actions-workflow)
-- [Paso 6: Frontend Deploy](#paso-6-frontend-deploy)
-- [Paso 7: Testing & Validación](#paso-7-testing--validación)
+**Última actualización:** Mayo 18, 2026  
+**Status:** ✅ Funcional (Alertas email en construcción)
 
 ---
 
-# PASO 1: Schema Google Sheets
+## 📋 Tabla de Contenidos
 
-## Descripción
-Crear la base de datos centralizada en Google Sheets con 5 hojas para almacenar: ofertas, usuarios, filtros, histórico de ejecuciones y cola de emails.
-
-## Tiempo: 15 minutos
-
-### 1.1 Crear Google Sheets Document
-
-1. Ve a [Google Sheets](https://sheets.google.com)
-2. Clic en **"Nuevo"** → **"Spreadsheet"**
-3. Nombra: **"ScrapMercadoPublico-BD"**
-
-### 1.2 Crear las 5 Hojas
-
-Por defecto hay "Sheet1". Renómbrala y agrega las otras:
-
-- Renombra a: **`ofertas`**
-- Agrega: **`users`**
-- Agrega: **`user_filters`**
-- Agrega: **`notification_runs`**
-- Agrega: **`temp_emails_queue`**
-
-### 1.3 Copiar Headers (Copy & Paste)
-
-Para cada hoja, copia estos headers en celda A1:
-
-#### Hoja: ofertas
-```
-codigo_externo	nombre	descripcion	descripcion_producto	organismo	estado	region	comuna	tipo_oferta	moneda	monto_estimado	fecha_publicacion	fecha_cierre	link	raw_json	created_at	updated_at	scraped_at
-```
-
-#### Hoja: users
-```
-user_id	email	unsub_token	is_active	created_at	last_alert_sent	metadata
-```
-
-#### Hoja: user_filters
-```
-filter_id	user_id	filter_name	filter_json	is_active	created_at	updated_at	last_matched_at
-```
-
-#### Hoja: notification_runs
-```
-run_id	executed_at	status	total_new_offers	total_updated_offers	total_deleted_offers	total_matches	total_alerts_sent	error_message	duration_seconds
-```
-
-#### Hoja: temp_emails_queue
-```
-queue_id	user_id	filter_id	matching_offers	created_at	sent_at	status
-```
-
-### 1.4 Guardar SPREADSHEET_ID
-
-En la URL del Sheets:
-```
-https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit
-```
-
-**Copia ese ID** - lo necesitarás en Paso 2.
-
-### ✅ Checklist Paso 1
-- [ ] Google Sheets creado
-- [ ] 5 hojas creadas y renombradas
-- [ ] Headers pegados en cada hoja
-- [ ] SPREADSHEET_ID guardado
-- [ ] Commit: `git commit -m "docs: confirm PASO 1 complete"`
+1. [Estado Actual](#estado-actual)
+2. [Cómo Reproducir](#cómo-reproducir)
+3. [Arquitectura](#arquitectura)
+4. [Base de Datos](#base-de-datos)
+5. [API Endpoints](#api-endpoints)
+6. [Frontend](#frontend)
+7. [Scripts](#scripts)
+8. [Troubleshooting](#troubleshooting)
+9. [Plan de Alertas Email](#plan-de-alertas-email)
 
 ---
 
-# PASO 2: Google Cloud Setup
+## 🎯 Estado Actual
 
-## Descripción
-Crear credenciales de Google Cloud para que GitHub Actions pueda acceder a Google Sheets.
+### ✅ Implementado y Funcionando
 
-## Tiempo: 10-15 minutos
+**Scraper:**
+- ✓ Descarga automática desde Mercado Público (cada 6h vía GitHub Actions)
+- ✓ Parseo inteligente de CSV (detecta encoding, delimitador, headers)
+- ✓ Normalización de 16 columnas de datos
+- ✓ Mapeo automático de columnas variables
+- ✓ Deduplicación de ofertas
 
-### 2.1 Crear Proyecto en Google Cloud
+**Base de Datos:**
+- ✓ SQLite con schema robusto
+- ✓ Migraciones automáticas
+- ✓ índices para búsqueda rápida
+- ✓ Limpieza automática (>30 días)
 
-1. Ve a [Google Cloud Console](https://console.cloud.google.com/)
-2. Logeate con tu cuenta Google
-3. Clic en selector de proyecto (arriba) → **"NEW PROJECT"**
-4. Nombra: `ScrapMercadoPublico-API`
-5. Clic en **"CREATE"**
-6. Espera 1-2 minutos
+**Backend API:**
+- ✓ FastAPI con CORS habilitado
+- ✓ GET `/api/offers` con filtros avanzados
+- ✓ GET `/api/filters/options` para dropdowns
+- ✓ POST `/api/update-offers` para actualización manual
+- ✓ Paginación (50-200 registros por página)
 
-### 2.2 Habilitar Google Sheets API
+**Frontend:**
+- ✓ Tabla responsive con todas las ofertas
+- ✓ Cards para móvil
+- ✓ Código clickeable → abre en Mercado Público
+- ✓ Búsqueda por palabra clave
+- ✓ 11+ filtros combinables
+- ✓ **NUEVO:** Filtro por días para cierre (min/max)
+- ✓ **NUEVO:** Nombre formateado (con tipo UTM en <100 UTM)
+- ✓ **NUEVO:** Fecha de cierre + Días restantes
+
+### ⏳ En Construcción
+
+- ⏳ Sistema de alertas por email (Mailgun)
+- ⏳ Registro de usuarios
+- ⏳ Filtros guardados por usuario
+- ⏳ Suscripción a alertas
+
+---
+
+## 🚀 Cómo Reproducir
+
+### Requisitos Mínimos
+
+```bash
+- Python 3.9+
+- pip o conda
+- Git
+- Conexión a internet
+```
+
+### Paso 1: Clonar Proyecto
+
+```bash
+git clone https://github.com/vincentlc/scrapper-mercado-publico-cl.git
+cd ScrapMercadoPublico
+```
+
+### Paso 2: Crear Entorno Virtual
+
+```bash
+# Linux / Mac
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Windows
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+### Paso 3: Instalar Dependencias
+
+```bash
+pip install -r requirements.txt
+```
+
+### Paso 4: Ejecutar Scraper (Opcional)
+
+```bash
+# Descarga ofertas desde Mercado Público y guarda en SQLite
+python -m scripts.update_offers
+
+# Resultado:
+# ✓ app/data/licitaciones.db creada
+# ✓ ~4600 ofertas descargadas
+# ✓ data/update_trace.log con detalles
+```
+
+### Paso 5: Iniciar Backend
+
+```bash
+# Terminal 1
+python -m uvicorn app.main:app --reload --port 8000
+
+# Output:
+# Uvicorn running on http://127.0.0.1:8000
+```
+
+### Paso 6: Servir Frontend
+
+```bash
+# Terminal 2
+cd docs
+python -m http.server 8080
+
+# Abierto en http://localhost:8080
+```
+
+### Paso 7: Usar la Aplicación
+
+1. Abre http://localhost:8080 en tu navegador
+2. Busca por palabra clave, filtro, rango UTM
+3. Haz clic en un código para ver en Mercado Público
+
+---
+
+## 🏗 Arquitectura
+
+### Componentes
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  MERCADO PÚBLICO                     │
+│            (ZIP CSV actualizado cada 6h)             │
+└────────────────┬────────────────────────────────────┘
+                 │
+                 ↓
+    ┌────────────────────────────┐
+    │  scripts/update_offers.py  │
+    │  - Descarga ZIP            │
+    │  - Parsea CSV              │
+    │  - Normaliza datos         │
+    │  - Valida & limpia         │
+    └────────────┬───────────────┘
+                 │
+                 ↓
+    ┌────────────────────────────┐
+    │  app/data/licitaciones.db  │
+    │  (SQLite, ~4600 registros) │
+    └────────────┬───────────────┘
+                 │
+                 ↓
+    ┌────────────────────────────┐
+    │   app/main.py (FastAPI)    │
+    │  - GET /api/offers         │
+    │  - GET /api/filters        │
+    │  - POST /api/update-offers │
+    └────────────┬───────────────┘
+                 │
+                 ↓
+    ┌────────────────────────────┐
+    │   docs/app.js (Frontend)   │
+    │  - Tabla + Cards           │
+    │  - Filtros interactivos    │
+    │  - Búsqueda en tiempo real │
+    └────────────────────────────┘
+```
+
+### Stack Tech Actual
+
+| Componente | Tecnología | Descripción |
+|-----------|------------|-------------|
+| **Scraper** | Python 3.9+ | Descarga y procesa CSV |
+| **BD** | SQLite | Almacenamiento local |
+| **Backend** | FastAPI 0.115 | API REST |
+| **Frontend** | HTML/CSS/JS | Vanilla (sin frameworks) |
+| **Hosting** | Local/Vercel | Desarrollo local, deploy en Vercel |
+
+---
+
+## 💾 Base de Datos
+
+### Tabla: `offers`
+
+```sql
+CREATE TABLE offers (
+    codigo_externo TEXT PRIMARY KEY,
+    nombre TEXT,
+    descripcion TEXT,
+    descripcion_producto TEXT,
+    organismo TEXT,
+    estado TEXT,
+    region TEXT,
+    comuna TEXT,
+    tipo_oferta TEXT,
+    moneda TEXT,
+    monto_estimado REAL,
+    fecha_publicacion TEXT,
+    fecha_cierre TEXT,
+    link TEXT,
+    raw_json TEXT,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Ejemplo de Registro
+
+```json
+{
+  "codigo_externo": "681563-8-LE26",
+  "nombre": "SERVICIO DE MANTENCION DE AREAS VERDES COMUNA DE RÁNQUIL",
+  "descripcion": "EFECTUAR LOS TRABAJOS EN SERVICIOS DE MANTENCION...",
+  "descripcion_producto": "Servicios de cuidado de céspedes",
+  "organismo": "Ilustre Municipalidad de Ranquil",
+  "estado": "Publicada",
+  "region": "Región del Ñuble",
+  "comuna": "Ránquil",
+  "tipo_oferta": "Licitación Pública inferior a 100 UTM (Compra Ágil)",
+  "moneda": "CLP",
+  "monto_estimado": 15000000,
+  "fecha_publicacion": "2026-05-17T22:26:42",
+  "fecha_cierre": "2026-05-27T15:17:00",
+  "link": "http://www.mercadopublico.cl/Procurement/Modules/RFB/DetailsAcquisition.aspx?idLicitacion=681563-8-LE26",
+  "updated_at": "2026-05-18T12:45:30"
+}
+```
+
+### Campos Enriquecidos (Frontend)
+
+El backend agrega estos campos calculados:
+
+```json
+{
+  "nombre_formateado": "SERVICIO DE MANTENCION (Compra Ágil)",
+  "dias_para_cierre": 9
+}
+```
+
+---
+
+## 🔗 API Endpoints
+
+### GET `/api/offers` - Listar ofertas con filtros
+
+**URL:**
+```
+http://localhost:8000/api/offers?keyword=software&region=Metropolitana&page=1&page_size=20
+```
+
+**Parámetros Query:**
+
+| Parámetro | Tipo | Descripción | Ejemplo |
+|-----------|------|-------------|---------|
+| `keyword` | string | Busca en nombre, descripción, producto, código | `software` |
+| `tipo_oferta` | string | Tipo exacto | `Licitación Pública...` |
+| `utm_range` | string | Rango UTM | `lt100`, `100_1000`, `gt5000` |
+| `estado` | string | Estado exacto | `Publicada` |
+| `organismo` | string | Organismo exacto | `Municipalidad` |
+| `region` | string | Región exacta | `Metropolitana` |
+| `comuna` | string | Comuna exacta | `Santiago` |
+| `min_monto` | number | Monto mínimo | `1000000` |
+| `max_monto` | number | Monto máximo | `50000000` |
+| `start_date` | ISO date | Desde publicación | `2026-05-01` |
+| `end_date` | ISO date | Hasta publicación | `2026-05-31` |
+| `start_close_date` | ISO date | Desde cierre | `2026-05-20` |
+| `end_close_date` | ISO date | Hasta cierre | `2026-06-30` |
+| `min_days_to_close` | number | Mínimo días para cierre | `5` |
+| `max_days_to_close` | number | Máximo días para cierre | `15` |
+| `page` | number | Número de página (default: 1) | `1` |
+| `page_size` | number | Registros por página (50-200, default: 50) | `100` |
+
+**Respuesta:**
+
+```json
+{
+  "items": [
+    {
+      "codigo_externo": "681563-8-LE26",
+      "nombre": "SERVICIO DE MANTENCION...",
+      "nombre_formateado": "SERVICIO DE MANTENCION (Compra Ágil)",
+      "descripcion": "...",
+      "organismo": "Ilustre Municipalidad de Ránquil",
+      "fecha_cierre": "2026-05-27T15:17:00",
+      "dias_para_cierre": 9,
+      "link": "http://www.mercadopublico.cl/...",
+      ...
+    }
+  ],
+  "total": 4656,
+  "page": 1,
+  "page_size": 50
+}
+```
+
+### GET `/api/filters/options` - Valores disponibles para filtros
+
+**URL:**
+```
+http://localhost:8000/api/filters/options
+```
+
+**Respuesta:**
+
+```json
+{
+  "tipo_oferta": [
+    "Licitación Pública inferior a 100 UTM (Compra Ágil)",
+    "Licitación Pública igual o superior a 100 UTM e inferior a 1.000 UTM (LP)",
+    ...
+  ],
+  "estado": ["Publicada", "Cerrada", "Suspendida"],
+  "organismo": ["Municipalidad X", "Empresa Y", ...],
+  "region": ["Región del Ñuble", "Metropolitana", ...],
+  "comuna": ["Santiago", "Ránquil", ...]
+}
+```
+
+### POST `/api/update-offers` - Actualizar ofertas manualmente
+
+**URL:**
+```
+http://localhost:8000/api/update-offers
+```
+
+**Respuesta:**
+
+```json
+{
+  "new_count": 145,
+  "updated_count": 0,
+  "deleted_count": 0,
+  "total_matches": 0,
+  "total_alerts_sent": 0
+}
+```
+
+---
+
+## 🎨 Frontend
+
+### Características
+
+1. **Búsqueda en tiempo real**
+   - Escribe palabra clave
+   - Filtra por código, nombre, descripción
+
+2. **Filtros Combinables**
+   - Rango UTM (Compra Ágil, LP)
+   - Estado, Organismo, Región
+   - Fecha de publicación
+   - Monto estimado
+   - **Días para cierre** (nuevo)
+
+3. **Visualización**
+   - Tabla desktop con ordenamiento
+   - Cards responsivos para móvil
+   - Código clickeable (abre en Mercado Público)
+   - Expandable text para descripciones largas
+   - **Nombre formateado con tipo UTM**
+   - **Fecha de cierre + Días restantes**
+
+### Cómo Usar
+
+```
+1. Abre http://localhost:8080
+2. Ingresa palabra clave (ej: "software")
+3. Selecciona filtros (ej: región, tipo oferta)
+4. Ajusta rango de días para cierre (ej: 5-15 días)
+5. Haz clic en código para ir a Mercado Público
+```
+
+---
+
+## 🔧 Scripts
+
+### `scripts/update_offers.py`
+
+Descarga y procesa ofertas.
+
+```bash
+# Uso
+python -m scripts.update_offers
+
+# Hace:
+# 1. Descarga ZIP de Mercado Público
+# 2. Extrae CSV
+# 3. Detecta encoding/delimitador
+# 4. Parsea y normaliza columnas
+# 5. Valida datos
+# 6. Inserta en SQLite
+# 7. Genera reporte
+
+# Output:
+# - app/data/licitaciones.db (creada/actualizada)
+# - data/update_trace.log (detalles)
+```
+
+### `scripts/init_google_sheets.py`
+
+Valida/inicializa headers en Google Sheets (opcional).
+
+```bash
+python -m scripts.init_google_sheets
+```
+
+### Tests
+
+```bash
+# Ejecutar todos
+pytest
+
+# Solo tests de API
+pytest tests/test_api_filters.py -v
+
+# Solo tests de scraper
+pytest tests/test_update_offers.py -v
+
+# Con cobertura
+pytest --cov=app --cov=scripts
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### "ModuleNotFoundError: No module named 'app'"
+
+**Solución:**
+```bash
+# Asegúrate de estar en directorio raíz
+pwd  # debe terminar en "ScrapMercadoPublico"
+
+# Y ejecutar con -m
+python -m uvicorn app.main:app --reload
+```
+
+### "No module named 'fastapi'"
+
+**Solución:**
+```bash
+# Instalar dependencias
+pip install -r requirements.txt
+
+# Verificar
+python -c "import fastapi; print(fastapi.__version__)"
+```
+
+### "Error: Could not detect CSV header"
+
+**Solución:**
+```bash
+# El CSV de Mercado Público cambió formato
+# Verifica manualmente:
+python << 'EOF'
+from scripts.update_offers import download_csv
+try:
+    offers, filename = download_csv()
+    print(f"✓ CSV descargado: {filename}")
+    print(f"✓ Registros: {len(offers)}")
+    print(f"✓ Columnas: {list(offers[0].keys())}")
+except Exception as e:
+    print(f"✗ Error: {e}")
+EOF
+```
+
+### "Base de datos vacía"
+
+**Solución:**
+```bash
+# 1. Verificar si existe
+ls -la app/data/licitaciones.db
+
+# 2. Ejecutar scraper
+python -m scripts.update_offers
+
+# 3. Contar registros
+sqlite3 app/data/licitaciones.db "SELECT COUNT(*) FROM offers;"
+```
+
+### "Port 8000 already in use"
+
+**Solución:**
+```bash
+# Usar otro puerto
+python -m uvicorn app.main:app --port 8001
+
+# O matar proceso existente
+lsof -ti :8000 | xargs kill -9
+```
+
+---
+
+## 📧 Plan de Alertas Email
+
+### Estado: ⏳ En Construcción
+
+**Por qué no está funcionando:**
+- Mailgun API integrada pero sin flujo completo
+- Falta sistema de suscripción de usuarios
+- Falta detección de nuevas ofertas vs filtro
+
+**Pasos necesarios (ver PLAN_ALERTAS.md):**
+
+1. **Fase 1: Backend de Suscripción**
+   - Endpoint POST `/api/subscribe` (email + filtros)
+   - Guardar usuarios en BD
+   - Generar token de desuscripción
+
+2. **Fase 2: Detección de Cambios**
+   - Comparar ofertas nuevas vs filtros guardados
+   - Identificar matches
+   - Preparar contenido de email
+
+3. **Fase 3: Envío Mailgun**
+   - Integrar Mailgun API
+   - Enviar email con HTML formateado
+   - Registrar estado en BD
+
+4. **Fase 4: Desuscripción**
+   - Endpoint GET `/api/unsubscribe/:token`
+   - Marcar usuario como inactivo
+   - Enviar confirmación
+
+**Próximas acciones:**
+- [ ] Crear PLAN_ALERTAS.md detallado
+- [ ] Implementar endpoints de suscripción
+- [ ] Crear tabla `users` en BD
+- [ ] Implementar lógica de matching
+- [ ] Integrar Mailgun
+
+---
+
+## 📚 Archivos Importantes
+
+```
+ScrapMercadoPublico/
+├── README.md                           ← Guía rápida (LEEME PRIMERO)
+├── documentation/GUIA_COMPLETA.md      ← Este archivo
+├── SOLUCION_DESALINEAMIENTO.md         ← Fix de columnas
+├── PLAN_ALERTAS.md                     ← (Próximo a crear)
+│
+├── app/
+│   ├── main.py                         ← FastAPI endpoints
+│   ├── db.py                           ← Init BD + migraciones
+│   ├── query.py                        ← Lógica de filtros
+│   └── data/licitaciones.db           ← Base de datos SQLite
+│
+├── scripts/
+│   ├── update_offers.py                ← Scraper principal
+│   ├── helpers.py                      ← Utilidades
+│   └── init_google_sheets.py          ← Validador Sheets
+│
+├── docs/
+│   ├── index.html                      ← Frontend
+│   ├── app.js                          ← Lógica JS
+│   └── styles.css                      ← Estilos
+│
+├── tests/
+│   ├── test_api_filters.py
+│   └── test_update_offers.py
+│
+└── requirements.txt                    ← Dependencias Python
+```
+
+---
+
+## 📞 Soporte
+
+Si encuentras problemas:
+
+1. Revisa [Troubleshooting](#troubleshooting)
+2. Revisa logs:
+   ```bash
+   tail -f data/update_trace.log
+   ```
+3. Abre issue en GitHub
+4. Contacta: [LinkedIn](https://www.linkedin.com/in/vincent-lec/)
 
 1. En la barra de búsqueda superior, busca: **"Google Sheets API"**
 2. En resultados, clic en **"Google Sheets API"**

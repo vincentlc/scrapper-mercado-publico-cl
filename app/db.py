@@ -85,4 +85,8 @@ def init_db() -> None:
             conn.execute("ALTER TABLE saved_filters ADD COLUMN start_close_date TEXT")
         if "end_close_date" not in saved_filter_cols:
             conn.execute("ALTER TABLE saved_filters ADD COLUMN end_close_date TEXT")
+        if "min_days_to_close" not in saved_filter_cols:
+            conn.execute("ALTER TABLE saved_filters ADD COLUMN min_days_to_close INTEGER")
+        if "max_days_to_close" not in saved_filter_cols:
+            conn.execute("ALTER TABLE saved_filters ADD COLUMN max_days_to_close INTEGER")
         conn.commit()

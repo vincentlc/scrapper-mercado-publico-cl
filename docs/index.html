@@ -38,6 +38,8 @@
           <label>Hasta publicacion<input id="end_date" type="date" /></label>
           <label>Desde cierre<input id="start_close_date" type="date" /></label>
           <label>Hasta cierre<input id="end_close_date" type="date" /></label>
+          <label>Días mínimos para cierre<input id="min_days_to_close" type="number" min="0" /></label>
+          <label>Días máximos para cierre<input id="max_days_to_close" type="number" min="0" /></label>
         </div>
         <div class="actions">
           <button id="applyFilters">Aplicar filtros</button>
@@ -68,6 +70,8 @@
               <th>Tipo</th>
               <th>Region</th>
               <th>Publicacion</th>
+              <th>Cierre</th>
+              <th>Dias</th>
             </tr>
           </thead>
           <tbody id="resultsTable"></tbody>

@@ -156,8 +156,13 @@ function renderOffers(offers) {
 
     const row = document.createElement("tr");
 
+    // Hacer el código clickeable si hay un link disponible
+    const codigoHtml = offer.link
+      ? `<a href="${offer.link}" target="_blank" style="color: #0066cc; text-decoration: underline; cursor: pointer;">${escapeHtml(offer.codigo_externo)}</a>`
+      : escapeHtml(offer.codigo_externo);
+
     row.innerHTML = `
-      <td>${escapeHtml(offer.codigo_externo)}</td>
+      <td>${codigoHtml}</td>
       <td>${escapeHtml(offer.nombre)}</td>
       <td>${renderExpandableText(offer.descripcion)}</td>
       <td>${renderExpandableText(offer.descripcion_producto)}</td>
@@ -175,12 +180,17 @@ function renderOffers(offers) {
 
     card.className = "offer-card";
 
+    // Hacer el código clickeable
+    const codigoDisplay = offer.link
+      ? `<a href="${offer.link}" target="_blank" style="color: #0066cc; text-decoration: underline; cursor: pointer;">${escapeHtml(offer.codigo_externo)}</a>`
+      : escapeHtml(offer.codigo_externo);
+
     card.innerHTML = `
       <h3>${escapeHtml(offer.nombre)}</h3>
 
       <p>
         <strong>Código:</strong>
-        ${escapeHtml(offer.codigo_externo)}
+        ${codigoDisplay}
       </p>
 
       <p>

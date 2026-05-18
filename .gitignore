@@ -46,6 +46,7 @@ Thumbs.db
 data/licitaciones.db
 data/*.csv
 data/*.log
+data/*.md
 .requirements.sha256
 .setup.done
 

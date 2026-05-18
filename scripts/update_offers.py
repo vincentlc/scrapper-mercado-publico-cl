@@ -88,8 +88,15 @@ def detect_delimiter(sample: str) -> str:
 def is_header_row(normalized_headers: List[str]) -> bool:
     """Detectar si una fila es header"""
     header_set = set(normalized_headers)
+    # Headers posibles de Mercado Público
     code_keys = {"codigoexterno", "codigo_externo", "codigo", "textbox36"}
-    return bool(header_set.intersection(code_keys)) and len(normalized_headers) >= 2
+    # Verificar que tenga código Y al menos 10 columnas (para evitar falsos positivos)
+    has_code = bool(header_set.intersection(code_keys))
+    # Además verificar otras columnas típicas
+    has_tipo = "tipolc" in header_set or "tipo_convocatoria" in header_set
+    has_desc = "rbidescription" in header_set or "descripcion" in header_set
+    
+    return has_code and len(normalized_headers) >= 10 and (has_tipo or has_desc)
 
 
 def parse_monto(value: str) -> str:
@@ -183,48 +190,100 @@ def download_csv(feed_url: str) -> Tuple[List[Dict[str, str]], str]:
 
 
 def map_offer(row: Dict[str, str]) -> Dict[str, str]:
-    """Mapear fila CSV a esquema de oferta"""
-    codigo = pick_value(row, "codigoexterno", "codigo_externo", "codigo", "textbox36")
+    """Mapear fila CSV a esquema de oferta
+    
+    Nota: El CSV de Mercado Público tiene headers específicos como:
+    Textbox36, Textbox37, Textbox38, etc.
+    """
+    # Mapeo completo de posibles nombres de columnas
+    codigo = pick_value(
+        row, 
+        "textbox36",  # MP actual
+        "codigoexterno", "codigo_externo", "codigo"
+    )
+    
+    nombre = pick_value(
+        row, 
+        "textbox37",  # MP actual
+        "nombre", "nombre_licitacion"
+    )
+    
+    descripcion = pick_value(
+        row, 
+        "textbox38",  # MP actual: Descripción Licitación
+        "descripcion", "descripcion_licitacion", "rbidescription"
+    )
+    
+    descripcion_producto = pick_value(
+        row, 
+        "rbidescription",  # MP actual: Descripción del Producto
+        "productoname", "producto", "descripcion_producto"
+    )
+    
+    nombre_organismo = pick_value(
+        row, 
+        "textbox39",  # MP actual
+        "nombreorganismo", "nombre_organismo", "organismo"
+    )
+    
+    estado = pick_value(
+        row, 
+        "codigoestado", "codigo_estado", "estado"
+    )
+    
+    region = pick_value(
+        row, 
+        "citname",  # MP actual
+        "regionunidad", "region_unidad", "region"
+    )
+    
+    comuna = pick_value(
+        row, 
+        "comunaunidad", "comuna_unidad", "comuna"
+    )
+    
+    tipo_oferta = pick_value(
+        row,
+        "tipolc",  # MP actual
+        "tipoconvocatoria", "tipo_convocatoria", "tipooferta", "tipo_oferta", "tipo"
+    )
+    
+    moneda = pick_value(row, "moneda", "codigomoneda", "codigo_moneda")
+    
     monto_raw = pick_value(row, "montoestimado", "monto_estimado", "monto")
+    
+    fecha_publicacion = pick_value(
+        row, 
+        "textbox40",  # MP actual
+        "fechapublicacion", "fecha_publicacion", "fecha_publicacion_oferta"
+    )
+    
+    fecha_cierre = pick_value(
+        row, 
+        "fechacierre1",  # MP actual
+        "fechacierre", "fecha_cierre"
+    )
+    
+    # URL: si no viene en CSV, generar desde código
+    link = pick_value(row, "link", "url", "url_licitacion", "url_licitacion_detalle")
+    if not link and codigo:
+        link = f"http://www.mercadopublico.cl/Procurement/Modules/RFB/DetailsAcquisition.aspx?idLicitacion={codigo}"
     
     return {
         "codigo_externo": codigo,
-        "nombre": pick_value(row, "nombre", "nombre_licitacion", "textbox37"),
-        "descripcion": pick_value(
-            row, "descripcion", "descripcion_licitacion", "textbox38", "rbidescription"
-        ),
-        "descripcion_producto": pick_value(
-            row, "productoname", "producto", "descripcion_producto"
-        ),
-        "organismo": pick_value(
-            row, "nombreorganismo", "nombre_organismo", "organismo", "textbox39"
-        ),
-        "estado": pick_value(row, "codigoestado", "codigo_estado", "estado"),
-        "region": pick_value(row, "regionunidad", "region_unidad", "region", "citname"),
-        "comuna": pick_value(row, "comunaunidad", "comuna_unidad", "comuna"),
-        "tipo_oferta": pick_value(
-            row,
-            "tipoconvocatoria",
-            "tipo_convocatoria",
-            "tipooferta",
-            "tipo_oferta",
-            "tipo",
-            "tipolc",
-        ),
-        "moneda": pick_value(row, "moneda", "codigomoneda", "codigo_moneda"),
+        "nombre": nombre,
+        "descripcion": descripcion,
+        "descripcion_producto": descripcion_producto,
+        "organismo": nombre_organismo,
+        "estado": estado,
+        "region": region,
+        "comuna": comuna,
+        "tipo_oferta": tipo_oferta,
+        "moneda": moneda,
         "monto_estimado": parse_monto(monto_raw),
-        "fecha_publicacion": parse_date(
-            pick_value(
-                row, "fechapublicacion", "fecha_publicacion", "fecha_publicacion_oferta", "textbox40"
-            )
-        ),
-        "fecha_cierre": parse_date(pick_value(row, "fechacierre", "fecha_cierre", "fechacierre1")),
-        "link": pick_value(row, "link", "url", "url_licitacion", "url_licitacion_detalle")
-        or (
-            f"http://www.mercadopublico.cl/Procurement/Modules/RFB/DetailsAcquisition.aspx?idLicitacion={codigo}"
-            if codigo
-            else ""
-        ),
+        "fecha_publicacion": parse_date(fecha_publicacion),
+        "fecha_cierre": parse_date(fecha_cierre),
+        "link": link,
     }
 
 

@@ -200,13 +200,19 @@ function renderOffers(offers) {
 
     tbody.innerHTML = `
       <tr>
-        <td colspan="8" style="text-align:center;padding:24px;color:#999;">
+        <td colspan="10" style="text-align:center;padding:24px;color:#999;">
           Sin resultados
         </td>
       </tr>
     `;
 
     return;
+  }
+
+  // Debug: Log first offer data to diagnose dias_para_cierre issue
+  console.log("First offer data:", offers[0]);
+  if (!offers[0].dias_para_cierre) {
+    console.warn("⚠️ dias_para_cierre is empty for first offer. Available keys:", Object.keys(offers[0]));
   }
 
   for (const offer of offers) {
@@ -221,16 +227,16 @@ function renderOffers(offers) {
       : escapeHtml(offer.codigo_externo);
 
     row.innerHTML = `
-      <td>${codigoHtml}</td>
-      <td>${escapeHtml(offer.nombre)}</td>
-      <td>${renderExpandableText(offer.descripcion)}</td>
-      <td>${renderExpandableText(offer.descripcion_producto)}</td>
-      <td>${escapeHtml(offer.organismo)}</td>
-      <td>${escapeHtml(offer.tipo_oferta_formateado || offer.tipo_oferta)}</td>
-      <td>${escapeHtml(offer.region)}</td>
-      <td>${escapeHtml(offer.fecha_publicacion)}</td>
-      <td>${formatDateWithTime(offer.fecha_cierre)}</td>
-      <td>${formatDaysRemaining(offer.dias_para_cierre)}</td>
+      <td data-col="codigo_externo">${codigoHtml}</td>
+      <td data-col="nombre">${escapeHtml(offer.nombre)}</td>
+      <td data-col="descripcion">${renderExpandableText(offer.descripcion)}</td>
+      <td data-col="descripcion_producto">${renderExpandableText(offer.descripcion_producto)}</td>
+      <td data-col="organismo" class="hidden">${escapeHtml(offer.organismo)}</td>
+      <td data-col="tipo_oferta">${escapeHtml(offer.tipo_oferta_formateado || offer.tipo_oferta)}</td>
+      <td data-col="region" class="hidden">${escapeHtml(offer.region)}</td>
+      <td data-col="fecha_publicacion" class="hidden">${escapeHtml(offer.fecha_publicacion)}</td>
+      <td data-col="fecha_cierre">${formatDateWithTime(offer.fecha_cierre)}</td>
+      <td data-col="dias_para_cierre">${formatDaysRemaining(offer.dias_para_cierre)}</td>
     `;
 
     tbody.appendChild(row);
@@ -531,6 +537,76 @@ function initializeColumnResize() {
   });
 }
 
+function initializeColumnToggle() {
+  const table = document.querySelector("table");
+  const checkboxes = document.querySelectorAll(".checkbox-toggle input[type='checkbox']");
+  const STORAGE_KEY = "column_visibility";
+  
+  console.log("🔧 Initializing column toggle. Found", checkboxes.length, "checkboxes and table:", !!table);
+  
+  if (!table || checkboxes.length === 0) {
+    console.warn("⚠️ Missing table or checkboxes");
+    return;
+  }
+  
+  // Load saved visibility preferences
+  const savedVisibility = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+  console.log("📦 Saved visibility:", savedVisibility);
+  
+  checkboxes.forEach((checkbox) => {
+    const colName = checkbox.getAttribute("data-col");
+    
+    // If we have a saved preference, use it; otherwise use the checkbox's current state
+    const shouldShow = savedVisibility[colName] !== undefined 
+      ? savedVisibility[colName] 
+      : checkbox.checked;
+    
+    console.log(`✓ Column ${colName}: shouldShow=${shouldShow}, checkbox.checked=${checkbox.checked}`);
+    
+    // Update checkbox to match the desired state
+    checkbox.checked = shouldShow;
+    
+    // Apply initial hide/show
+    if (!shouldShow) {
+      hideColumn(colName, table);
+    }
+    
+    // Add change listener
+    checkbox.addEventListener("change", (e) => {
+      console.log(`🔄 Toggle ${colName}: now checked=${checkbox.checked}`);
+      if (checkbox.checked) {
+        showColumn(colName, table);
+      } else {
+        hideColumn(colName, table);
+      }
+      
+      // Save preference
+      savedVisibility[colName] = checkbox.checked;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(savedVisibility));
+    });
+  });
+}
+
+function hideColumn(colName, table) {
+  // Hide all cells with this data-col attribute
+  const cells = table.querySelectorAll(`th[data-col="${colName}"], td[data-col="${colName}"]`);
+  console.log(`🚫 hideColumn("${colName}"): Found ${cells.length} cells`);
+  cells.forEach((cell, idx) => {
+    cell.classList.add("hidden");
+    if (idx < 3) console.log(`   [${idx}] Added hidden class to:`, cell.tagName, cell.textContent?.substring(0, 30));
+  });
+}
+
+function showColumn(colName, table) {
+  // Show all cells with this data-col attribute
+  const cells = table.querySelectorAll(`th[data-col="${colName}"], td[data-col="${colName}"]`);
+  console.log(`✅ showColumn("${colName}"): Found ${cells.length} cells`);
+  cells.forEach((cell, idx) => {
+    cell.classList.remove("hidden");
+    if (idx < 3) console.log(`   [${idx}] Removed hidden class from:`, cell.tagName, cell.textContent?.substring(0, 30));
+  });
+}
+
 // ========== INIT ==========
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -542,6 +618,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadSavedFilters();
   
   initializeColumnResize();
+  initializeColumnToggle();
 
   document
     .getElementById("applyFilters")

@@ -30,9 +30,15 @@ def calculate_days_until_close(fecha_cierre: str) -> Optional[int]:
         return None
     
     try:
-        # Soporta formatos ISO, datetime con o sin hora
+        # Soporta formatos ISO, datetime con o sin hora, y DD/MM/YYYY
         close_date = None
-        for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+        for fmt in [
+            "%Y-%m-%dT%H:%M:%S",  # ISO with T separator
+            "%Y-%m-%d %H:%M:%S",  # ISO with space separator
+            "%Y-%m-%d",           # ISO date only
+            "%d/%m/%Y %H:%M:%S",  # DD/MM/YYYY with time
+            "%d/%m/%Y",           # DD/MM/YYYY only
+        ]:
             try:
                 close_date = datetime.strptime(fecha_cierre[:19], fmt)
                 break

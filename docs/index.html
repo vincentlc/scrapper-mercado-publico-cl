@@ -59,20 +59,38 @@
       -->
       <section class="panel">
         <h2>Resultados (<span id="resultCount">0</span>)</h2>
+        <div class="column-controls">
+          <label class="checkbox-toggle">
+            <input type="checkbox" data-col="descripcion_producto" checked />
+            <span>Descripción Producto</span>
+          </label>
+          <label class="checkbox-toggle">
+            <input type="checkbox" data-col="organismo" />
+            <span>Organismo</span>
+          </label>
+          <label class="checkbox-toggle">
+            <input type="checkbox" data-col="region" />
+            <span>Región</span>
+          </label>
+          <label class="checkbox-toggle">
+            <input type="checkbox" data-col="fecha_publicacion" />
+            <span>Publicación</span>
+          </label>
+        </div>
         <div class="table-wrap">
           <table>
           <thead>
             <tr>
-              <th>Codigo</th>
-              <th>Nombre</th>
-              <th>Descripcion</th>
-              <th>Descripcion producto</th>
-              <th>Organismo</th>
-              <th>Tipo</th>
-              <th>Region</th>
-              <th>Publicacion</th>
-              <th>Cierre</th>
-              <th>Dias</th>
+              <th data-col="codigo_externo">Codigo</th>
+              <th data-col="nombre">Nombre</th>
+              <th data-col="descripcion">Descripcion</th>
+              <th data-col="descripcion_producto">Desc. Producto</th>
+              <th data-col="organismo" class="hidden">Organismo</th>
+              <th data-col="tipo_oferta">Tipo</th>
+              <th data-col="region" class="hidden">Región</th>
+              <th data-col="fecha_publicacion" class="hidden">Publicación</th>
+              <th data-col="fecha_cierre">Cierre</th>
+              <th data-col="dias_para_cierre">Días</th>
             </tr>
           </thead>
           <tbody id="resultsTable"></tbody>

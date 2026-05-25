@@ -82,6 +82,46 @@ main {
   font-size: clamp(1.25rem, 4vw, 1.5rem);
 }
 
+.column-controls {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f9f9f9;
+  border-radius: 4px;
+}
+
+.checkbox-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+}
+
+.checkbox-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #175cd3;
+}
+
+.checkbox-toggle input[type="checkbox"]:checked {
+  accent-color: #0d47a1;
+}
+
+.checkbox-toggle span {
+  color: #333;
+  font-weight: 500;
+}
+
+th.hidden,
+td.hidden {
+  display: none;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(clamp(150px, 20vw, 240px), 1fr));
@@ -173,7 +213,38 @@ td {
   border-right: 1px solid var(--color-border);
   vertical-align: top;
   word-break: break-word;
+  min-width: 80px;
 }
+
+th[data-col="codigo_externo"],
+td[data-col="codigo_externo"] { min-width: 100px; }
+
+th[data-col="nombre"],
+td[data-col="nombre"] { min-width: 150px; }
+
+th[data-col="descripcion"],
+td[data-col="descripcion"] { min-width: 180px; }
+
+th[data-col="descripcion_producto"],
+td[data-col="descripcion_producto"] { min-width: 160px; }
+
+th[data-col="organismo"],
+td[data-col="organismo"] { min-width: 130px; }
+
+th[data-col="tipo_oferta"],
+td[data-col="tipo_oferta"] { min-width: 120px; }
+
+th[data-col="region"],
+td[data-col="region"] { min-width: 100px; }
+
+th[data-col="fecha_publicacion"],
+td[data-col="fecha_publicacion"] { min-width: 130px; }
+
+th[data-col="fecha_cierre"],
+td[data-col="fecha_cierre"] { min-width: 130px; }
+
+th[data-col="dias_para_cierre"],
+td[data-col="dias_para_cierre"] { min-width: 100px; text-align: center; font-weight: bold; color: #d9534f; }
 
 th {
   background: #f9fafb;

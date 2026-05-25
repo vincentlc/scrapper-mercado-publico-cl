@@ -53,27 +53,61 @@ function renderExpandableText(text, maxLength = DESCRIPTION_PREVIEW_LENGTH) {
   `;
 }
 
-function formatDate(dateStr) {
-  if (!dateStr) return "";
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('es-CL', { 
-      year: 'numeric', 
-      month: '2-digit', 
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  } catch {
-    return String(dateStr);
+// Parse date in multiple formats to handle Google Sheets exports
+function parseDate(dateStr) {
+  if (!dateStr) return null;
+  
+  // Try to parse as ISO format (2026-05-20T15:30:00)
+  let date = new Date(dateStr);
+  if (!isNaN(date.getTime())) return date;
+  
+  // Try to parse DD/MM/YYYY HH:MM:SS or DD/MM/YYYY
+  const ddmmyy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(dateStr);
+  if (ddmmyy) {
+    const day = parseInt(ddmmyy[1]);
+    const month = parseInt(ddmmyy[2]) - 1; // JS months are 0-indexed
+    const year = parseInt(ddmmyy[3]);
+    const hour = ddmmyy[4] ? parseInt(ddmmyy[4]) : 0;
+    const minute = ddmmyy[5] ? parseInt(ddmmyy[5]) : 0;
+    const second = ddmmyy[6] ? parseInt(ddmmyy[6]) : 0;
+    date = new Date(year, month, day, hour, minute, second);
+    if (!isNaN(date.getTime())) return date;
   }
+  
+  return null;
 }
 
-function formatDaysRemaining(days) {
-  if (days === null || days === undefined) return "";
-  if (days === 0) return "Hoy";
-  if (days === 1) return "Mañana";
-  return `${days}d`;
+function formatDate(dateStr) {
+  if (!dateStr) return "";
+  const date = parseDate(dateStr);
+  if (!date) return String(dateStr);
+  
+  return date.toLocaleDateString('es-CL', { 
+    year: 'numeric', 
+    month: '2-digit', 
+    day: '2-digit'
+  });
+}
+
+function formatDateWithTime(dateStr) {
+  if (!dateStr) return "";
+  const date = parseDate(dateStr);
+  if (!date) return String(dateStr);
+  
+  return date.toLocaleDateString('es-CL', { 
+    year: 'numeric', 
+    month: '2-digit', 
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function formatDaysRemaining(daysValue) {
+  // Simply display the value from Google Sheets formula
+  // Expected format from sheet: "5d, 3h" or similar
+  if (!daysValue) return "";
+  return String(daysValue);
 }
 
 function getFiltersFromForm() {
@@ -195,7 +229,7 @@ function renderOffers(offers) {
       <td>${escapeHtml(offer.tipo_oferta_formateado || offer.tipo_oferta)}</td>
       <td>${escapeHtml(offer.region)}</td>
       <td>${escapeHtml(offer.fecha_publicacion)}</td>
-      <td>${formatDate(offer.fecha_cierre)}</td>
+      <td>${formatDateWithTime(offer.fecha_cierre)}</td>
       <td>${formatDaysRemaining(offer.dias_para_cierre)}</td>
     `;
 
@@ -242,7 +276,7 @@ function renderOffers(offers) {
 
       <p>
         <strong>Cierre:</strong>
-        ${formatDate(offer.fecha_cierre)}
+        ${formatDateWithTime(offer.fecha_cierre)}
         ${offer.dias_para_cierre !== null && offer.dias_para_cierre !== undefined ? `<span style="color: #d9534f; font-weight: bold;"> (${formatDaysRemaining(offer.dias_para_cierre)})</span>` : ""}
       </p>
 
@@ -438,6 +472,65 @@ async function saveFilter() {
   // }
 }
 
+// ========== COLUMN RESIZE HANDLER ==========
+
+function initializeColumnResize() {
+  const table = document.querySelector("table");
+  if (!table) return;
+
+  const headers = table.querySelectorAll("th");
+  const STORAGE_KEY = "column_widths";
+  
+  // Load saved widths
+  const savedWidths = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+  headers.forEach((th, idx) => {
+    th.classList.add("resizable");
+    if (savedWidths[idx]) {
+      th.style.width = savedWidths[idx] + "px";
+    }
+  });
+
+  // Resize handler
+  let isResizing = false;
+  let startX = 0;
+  let currentHeader = null;
+
+  headers.forEach((header, idx) => {
+    header.addEventListener("mousedown", (e) => {
+      // Only trigger resize on the right edge
+      if (e.clientX - header.getBoundingClientRect().right > -10) {
+        isResizing = true;
+        currentHeader = header;
+        startX = e.clientX;
+        e.preventDefault();
+      }
+    });
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!isResizing || !currentHeader) return;
+    const delta = e.clientX - startX;
+    const newWidth = currentHeader.offsetWidth + delta;
+    if (newWidth > 50) {
+      currentHeader.style.width = newWidth + "px";
+      startX = e.clientX;
+    }
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (!isResizing) return;
+    isResizing = false;
+    
+    // Save widths
+    const widths = {};
+    headers.forEach((th, idx) => {
+      widths[idx] = th.offsetWidth;
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(widths));
+    currentHeader = null;
+  });
+}
+
 // ========== INIT ==========
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -447,6 +540,8 @@ document.addEventListener("DOMContentLoaded", () => {
   loadOffers();
 
   loadSavedFilters();
+  
+  initializeColumnResize();
 
   document
     .getElementById("applyFilters")

@@ -29,6 +29,8 @@ from scripts.helpers import (
     get_sheet_data,
     clean_old_offers
 )
+from app.query import calculate_days_until_close
+from app.db import get_conn
 
 DEFAULT_FEED_URL = "https://www.mercadopublico.cl/Portal/att.ashx?id=5"
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -90,13 +92,16 @@ def is_header_row(normalized_headers: List[str]) -> bool:
     header_set = set(normalized_headers)
     # Headers posibles de Mercado Público
     code_keys = {"codigoexterno", "codigo_externo", "codigo", "textbox36"}
-    # Verificar que tenga código Y al menos 10 columnas (para evitar falsos positivos)
-    has_code = bool(header_set.intersection(code_keys))
-    # Además verificar otras columnas típicas
-    has_tipo = "tipolc" in header_set or "tipo_convocatoria" in header_set
-    has_desc = "rbidescription" in header_set or "descripcion" in header_set
+    name_keys = {"nombre", "textbox37", "nombre_licitacion"}
+    desc_keys = {"descripcion", "textbox38", "rbidescription"}
     
-    return has_code and len(normalized_headers) >= 10 and (has_tipo or has_desc)
+    # Verificar que tenga código Y (nombre O descripción)
+    has_code = bool(header_set.intersection(code_keys))
+    has_name = bool(header_set.intersection(name_keys))
+    has_desc = bool(header_set.intersection(desc_keys))
+    
+    # Must have code and at least 2 of (name, description, tipo, rbidescription)
+    return has_code and (has_name or has_desc) and len(normalized_headers) >= 3
 
 
 def parse_monto(value: str) -> str:
@@ -362,6 +367,9 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL):
                 "codigo": codigo,
                 "producto": offer.get("descripcion_producto"),
             }
+            
+            # Calcular días restantes hasta cierre
+            dias_que_quedan = calculate_days_until_close(offer.get("fecha_cierre", ""))
 
             values = [
                 offer.get("codigo_externo", ""),
@@ -377,6 +385,7 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL):
                 offer.get("monto_estimado", "0"),
                 offer.get("fecha_publicacion", ""),
                 offer.get("fecha_cierre", ""),
+                dias_que_quedan if dias_que_quedan is not None else "",
                 offer.get("link", ""),
                 json.dumps(minimal_raw, ensure_ascii=False),
                 now_iso,
@@ -384,7 +393,25 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL):
                 now_iso,
             ]
 
-            rows_to_insert.append(values)
+            rows_to_insert.append((values, [
+                offer.get("codigo_externo", ""),
+                offer.get("nombre", ""),
+                offer.get("descripcion", ""),
+                offer.get("descripcion_producto", ""),
+                offer.get("organismo", ""),
+                offer.get("estado", ""),
+                offer.get("region", ""),
+                offer.get("comuna", ""),
+                offer.get("tipo_oferta", ""),
+                offer.get("moneda", ""),
+                offer.get("monto_estimado", "0"),
+                offer.get("fecha_publicacion", ""),
+                offer.get("fecha_cierre", ""),
+                dias_que_quedan if dias_que_quedan is not None else "",
+                offer.get("link", ""),
+                json.dumps(minimal_raw, ensure_ascii=False),
+                now_iso,
+            ]))
 
             stats["new_count"] += 1
 
@@ -401,7 +428,23 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL):
                 f"[BATCH] Insertando {i} - {i + len(chunk)}"
             )
 
-            append_many_rows("ofertas", chunk)
+            # Insert to Google Sheets (using google_sheets_values)
+            gs_rows = [item[0] for item in chunk]
+            append_many_rows("ofertas", gs_rows)
+
+            # Insert to SQLite database (using sqlite_values)
+            with get_conn() as conn:
+                for item in chunk:
+                    sqlite_values = item[1]
+                    conn.execute("""
+                        INSERT OR REPLACE INTO offers 
+                        (codigo_externo, nombre, descripcion, descripcion_producto, 
+                         organismo, estado, region, comuna, tipo_oferta, moneda, 
+                         monto_estimado, fecha_publicacion, fecha_cierre, dias_que_quedan, 
+                         link, raw_json, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, sqlite_values)
+                conn.commit()
 
             # evitar quota exceeded
             time.sleep(2)

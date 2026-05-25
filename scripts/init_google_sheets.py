@@ -44,6 +44,7 @@ def ensure_headers():
                 'monto_estimado',
                 'fecha_publicacion',
                 'fecha_cierre',
+                'dias_que_quedan',
                 'link',
                 'raw_json',
                 'created_at',

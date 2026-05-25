@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from app.db import get_conn, init_db
 from app.query import build_offer_filters, normalize_option_values, format_tipo_oferta, calculate_days_until_close
-from scripts.update_offers import run_update
+#from scripts.update_offers import run_update
 
 
 class SavedFilterIn(BaseModel):
@@ -31,8 +31,8 @@ class SavedFilterIn(BaseModel):
     max_days_to_close: Optional[int] = None
 
 
-BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "static"
+BASE_DIR = Path(__file__).resolve().parent.parent
+STATIC_DIR = BASE_DIR / "docs"
 app = FastAPI(title="ScrapMercadoPublico")
 app.add_middleware(
     CORSMiddleware,
@@ -53,13 +53,13 @@ def root() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.post("/api/update-offers")
+'''@app.post("/api/update-offers")
 def update_offers_now() -> Dict[str, object]:
     try:
         return run_update()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Update failed: {exc}") from exc
-
+'''
 
 @app.get("/api/offers")
 def list_offers(
@@ -115,7 +115,12 @@ def list_offers(
     # Enriquecer datos con tipo formateado y días restantes
     for item in items:
         item["tipo_oferta_formateado"] = format_tipo_oferta(item.get("tipo_oferta", ""))
-        item["dias_para_cierre"] = calculate_days_until_close(item.get("fecha_cierre", ""))
+        # Usar dias_que_quedan del DB si existe, sino calcular desde fecha_cierre
+        dias_db = item.get("dias_que_quedan")
+        if dias_db:
+            item["dias_para_cierre"] = dias_db
+        else:
+            item["dias_para_cierre"] = calculate_days_until_close(item.get("fecha_cierre", ""))
     
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 

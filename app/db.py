@@ -40,6 +40,7 @@ def init_db() -> None:
                 monto_estimado REAL,
                 fecha_publicacion TEXT,
                 fecha_cierre TEXT,
+                dias_que_quedan TEXT,
                 link TEXT,
                 raw_json TEXT,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -78,6 +79,8 @@ def init_db() -> None:
         existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(offers)").fetchall()}
         if "descripcion_producto" not in existing_cols:
             conn.execute("ALTER TABLE offers ADD COLUMN descripcion_producto TEXT")
+        if "dias_que_quedan" not in existing_cols:
+            conn.execute("ALTER TABLE offers ADD COLUMN dias_que_quedan TEXT")
         saved_filter_cols = {row["name"] for row in conn.execute("PRAGMA table_info(saved_filters)").fetchall()}
         if "utm_range" not in saved_filter_cols:
             conn.execute("ALTER TABLE saved_filters ADD COLUMN utm_range TEXT")

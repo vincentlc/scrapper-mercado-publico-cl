@@ -30,7 +30,7 @@ from scripts.helpers import (
     clean_old_offers
 )
 from app.query import calculate_days_until_close
-from app.db import get_conn
+from app.db import get_conn, init_db
 
 DEFAULT_FEED_URL = "https://www.mercadopublico.cl/Portal/att.ashx?id=5"
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -308,6 +308,9 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL):
     try:
 
         print("[INFO] Iniciando actualización de ofertas...")
+        
+        # Inicializar base de datos (crear tabla si no existe)
+        init_db()
 
         # DESCARGAR CSV
         offers_data, filename = download_csv(feed_url)

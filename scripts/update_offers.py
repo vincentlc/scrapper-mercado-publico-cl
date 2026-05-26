@@ -388,12 +388,12 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL):
                 offer.get("monto_estimado", "0"),
                 offer.get("fecha_publicacion", ""),
                 offer.get("fecha_cierre", ""),
-                dias_que_quedan if dias_que_quedan is not None else "",
                 offer.get("link", ""),
                 json.dumps(minimal_raw, ensure_ascii=False),
                 now_iso,
                 now_iso,
                 now_iso,
+                dias_que_quedan if dias_que_quedan is not None else "",
             ]
 
             rows_to_insert.append((values, [
@@ -410,10 +410,10 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL):
                 offer.get("monto_estimado", "0"),
                 offer.get("fecha_publicacion", ""),
                 offer.get("fecha_cierre", ""),
-                dias_que_quedan if dias_que_quedan is not None else "",
                 offer.get("link", ""),
                 json.dumps(minimal_raw, ensure_ascii=False),
                 now_iso,
+                dias_que_quedan if dias_que_quedan is not None else "",
             ]))
 
             stats["new_count"] += 1

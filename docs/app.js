@@ -1,5 +1,8 @@
 // ========== CONFIGURACIÓN ==========
-const API_BASE = "https://scrapper-mercado-publico-cl.vercel.app";
+// Detectar API base automáticamente
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? `http://${window.location.hostname}:8000`
+  : "https://scrapper-mercado-publico-cl.vercel.app";
 
 const filterFields = [
   "keyword",
@@ -210,9 +213,11 @@ function renderOffers(offers) {
   }
 
   // Debug: Log first offer data to diagnose dias_para_cierre issue
+  console.log("📊 Rendering", offers.length, "offers");
   console.log("First offer data:", offers[0]);
+  console.log("First offer dias_para_cierre:", offers[0].dias_para_cierre);
   if (!offers[0].dias_para_cierre) {
-    console.warn("⚠️ dias_para_cierre is empty for first offer. Available keys:", Object.keys(offers[0]));
+    console.warn("⚠️ dias_para_cierre is empty for first offer. Keys:", Object.keys(offers[0]));
   }
 
   for (const offer of offers) {
@@ -331,7 +336,7 @@ async function loadOffers(page = 1) {
     console.log("OFFERS RESPONSE:", data);
 
 
-    renderOffers(data.offers || []);
+    renderOffers(data.items || []);
 
   } catch (err) {
 

@@ -30,6 +30,7 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
           MAILGUN_DOMAIN: ${{ secrets.MAILGUN_DOMAIN }}
+          MERCADO_PUBLICO_FEED_URL: ${{ vars.MERCADO_PUBLICO_FEED_URL }}
         run: |
           python -m scripts.update_offers
       

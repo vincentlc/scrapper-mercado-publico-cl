@@ -15,11 +15,12 @@ import json
 import logging
 import os
 import re
+import subprocess
 import zipfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Callable, Dict, Iterable, List, Tuple
 
 import requests
 
@@ -32,7 +33,21 @@ from scripts.helpers import (
 from app.query import calculate_days_until_close
 from app.db import get_conn, init_db
 
-DEFAULT_FEED_URL = "https://www.mercadopublico.cl/Portal/att.ashx?id=5"
+DEFAULT_FEED_URL = os.environ.get(
+    "MERCADO_PUBLICO_FEED_URL",
+    "https://www.mercadopublico.cl/Portal/att.ashx?id=5",
+)
+MP_PORTAL_ORIGIN = "https://www.mercadopublico.cl"
+MP_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "es-CL,es;q=0.9,en;q=0.8",
+    "Referer": f"{MP_PORTAL_ORIGIN}/",
+}
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOG_PATH = BASE_DIR / "data" / "update_trace.log"
 BATCH_SIZE = 200
@@ -177,14 +192,93 @@ def pick_value(row: Dict[str, str], *keys: str) -> str:
     return ""
 
 
+def _warmup_portal_session(session) -> None:
+    try:
+        session.get(f"{MP_PORTAL_ORIGIN}/", timeout=30)
+    except requests.RequestException:
+        pass
+
+
+def _download_with_requests(feed_url: str) -> bytes:
+    session = requests.Session()
+    session.headers.update(MP_BROWSER_HEADERS)
+    _warmup_portal_session(session)
+    response = session.get(feed_url, timeout=90)
+    response.raise_for_status()
+    return response.content
+
+
+def _download_with_curl(feed_url: str) -> bytes:
+    cmd = [
+        "curl",
+        "-fsSL",
+        "--max-time",
+        "90",
+        "-A",
+        MP_BROWSER_HEADERS["User-Agent"],
+        "-H",
+        f"Accept-Language: {MP_BROWSER_HEADERS['Accept-Language']}",
+        "-H",
+        f"Referer: {MP_BROWSER_HEADERS['Referer']}",
+        feed_url,
+    ]
+    proc = subprocess.run(cmd, capture_output=True, check=False)
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode("utf-8", errors="replace")[:500]
+        raise RuntimeError(f"curl exit {proc.returncode}: {stderr}")
+    return proc.stdout
+
+
+def _download_with_curl_cffi(feed_url: str) -> bytes:
+    from curl_cffi import requests as curl_requests
+
+    session = curl_requests.Session()
+    try:
+        session.get(f"{MP_PORTAL_ORIGIN}/", impersonate="chrome120", timeout=30)
+    except Exception:
+        pass
+    response = session.get(feed_url, impersonate="chrome120", timeout=90)
+    response.raise_for_status()
+    return response.content
+
+
+def download_feed_bytes(feed_url: str) -> bytes:
+    """Descargar bytes del feed probando varias estrategias anti-bloqueo."""
+    logger = get_logger()
+    strategies: List[Tuple[str, Callable[[str], bytes]]] = [
+        ("requests", _download_with_requests),
+        ("curl_cffi", _download_with_curl_cffi),
+        ("curl", _download_with_curl),
+    ]
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        strategies = [
+            ("curl_cffi", _download_with_curl_cffi),
+            ("curl", _download_with_curl),
+            ("requests", _download_with_requests),
+        ]
+    errors: List[str] = []
+
+    for name, strategy in strategies:
+        try:
+            logger.info("Descargando feed con %s ...", name)
+            return strategy(feed_url)
+        except Exception as exc:
+            logger.warning("Descarga con %s falló: %s", name, exc)
+            errors.append(f"{name}: {exc}")
+
+    raise RuntimeError(
+        "No se pudo descargar el feed de Mercado Público. Intentos:\n"
+        + "\n".join(errors)
+        + "\nMercado Público suele bloquear IPs de datacenter (p. ej. GitHub Actions). "
+        "Opciones: self-hosted runner, proxy, o API oficial en api.mercadopublico.cl."
+    )
+
+
 def download_csv(feed_url: str) -> Tuple[List[Dict[str, str]], str]:
     """Descargar CSV desde Mercado Público"""
-    response = requests.get(feed_url, timeout=90)
-    response.raise_for_status()
-    content_type = response.headers.get("content-type", "").lower()
-    content = response.content
+    content = download_feed_bytes(feed_url)
 
-    if "zip" in content_type or content[:2] == b"PK":
+    if content[:2] == b"PK":
         with zipfile.ZipFile(io.BytesIO(content)) as zf:
             for info in zf.infolist():
                 if info.filename.lower().endswith(".csv"):
@@ -441,10 +535,9 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL):
                     sqlite_values = item[1]
                     conn.execute("""
                         INSERT OR REPLACE INTO offers 
-                        (codigo_externo, nombre, descripcion, descripcion_producto, 
-                         organismo, estado, region, comuna, tipo_oferta, moneda, 
-                         monto_estimado, fecha_publicacion, fecha_cierre, dias_que_quedan, 
-                         link, raw_json, updated_at)
+                        (codigo_externo, nombre, descripcion, organismo, estado, region, 
+                         comuna, tipo_oferta, moneda, monto_estimado, fecha_publicacion, 
+                         fecha_cierre, link, raw_json, updated_at, descripcion_producto, dias_que_quedan)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, sqlite_values)
                 conn.commit()

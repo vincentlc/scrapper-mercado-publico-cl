@@ -446,7 +446,7 @@ def enrich_offer_from_api(ticket: str, offer: Dict[str, str]) -> Dict[str, str]:
 
 def map_offer_from_api(item: Dict) -> Dict[str, str]:
     """Mapear licitación JSON de la API oficial al esquema interno."""
-    codigo = _get_nested(item, ("CodigoExterno",), ("Codigo",), ("codigo_externo",))
+    codigo = _get_nested(item, ("CodigoExterno",), ("Codigo",), ("codigo_externo",), ("codigoexterno",))
     nombre = _get_nested(item, ("Nombre",), ("NombreLicitacion",), ("nombre",))
     descripcion = _get_nested(
         item,
@@ -463,17 +463,23 @@ def map_offer_from_api(item: Dict) -> Dict[str, str]:
         ("organismo",),
     )
     estado = _resolve_api_estado(item)
+    # Region: múltiples caminos posibles según estructura de API
     region = _get_nested(
         item,
         ("Comprador", "RegionUnidad"),
         ("Comprador", "Region"),
+        ("Comprador", "Ubicacion", "Region"),
+        ("RegionUnidad",),
         ("Region",),
         ("region",),
     )
+    # Comuna: múltiples caminos posibles según estructura de API
     comuna = _get_nested(
         item,
         ("Comprador", "ComunaUnidad"),
         ("Comprador", "Comuna"),
+        ("Comprador", "Ubicacion", "Comuna"),
+        ("ComunaUnidad",),
         ("Comuna",),
         ("comuna",),
     )
@@ -485,17 +491,22 @@ def map_offer_from_api(item: Dict) -> Dict[str, str]:
         ("Monto",),
         ("monto_estimado",),
     )
+    # FechaPublicacion: múltiples caminos posibles según estructura de API
     fecha_publicacion = _get_nested(
         item,
         ("Fechas", "FechaPublicacion"),
         ("FechaPublicacion",),
         ("Fechas", "FechaCreacion"),
+        ("FechaCreacion",),
+        ("PublicationDate",),
         ("fecha_publicacion",),
     )
+    # FechaCierre: múltiples caminos posibles según estructura de API
     fecha_cierre = _get_nested(
         item,
         ("Fechas", "FechaCierre"),
         ("FechaCierre",),
+        ("ClosingDate",),
         ("fecha_cierre",),
     )
     link = _get_nested(item, ("Link",), ("Url",), ("UrlLicitacion",))

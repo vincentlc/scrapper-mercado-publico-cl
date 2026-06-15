@@ -34,6 +34,7 @@ from app.query import calculate_days_until_close
 from app.db import get_conn, init_db
 
 _FALLBACK_FEED_URL = "https://www.mercadopublico.cl/Portal/att.ashx?id=5"
+MP_API_URL = "https://api.mercadopublico.cl/servicios/v1/publico/licitaciones.json"
 DEFAULT_FEED_URL = os.environ.get("MERCADO_PUBLICO_FEED_URL") or _FALLBACK_FEED_URL
 MP_PORTAL_ORIGIN = "https://www.mercadopublico.cl"
 MP_BROWSER_HEADERS = {
@@ -139,6 +140,8 @@ def parse_date(value: str) -> str:
         "%d-%m-%Y",
         "%Y-%m-%d",
         "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
     ]
     for pattern in patterns:
         try:
@@ -188,6 +191,177 @@ def pick_value(row: Dict[str, str], *keys: str) -> str:
         if value:
             return value
     return ""
+
+
+def _get_nested(data: dict, *paths: Tuple[str, ...]) -> str:
+    for path in paths:
+        cur = data
+        for key in path:
+            if not isinstance(cur, dict):
+                cur = None
+                break
+            cur = cur.get(key)
+        if cur is not None and cur != "":
+            return normalize_cell(cur)
+    return ""
+
+
+def _api_ticket() -> str:
+    return os.environ.get("MERCADO_PUBLICO_API_TICKET", "").strip()
+
+
+def _github_actions_csv_blocked_message() -> str:
+    return (
+        "Mercado Público bloquea la descarga CSV desde GitHub Actions (403).\n"
+        "Configura el secret MERCADO_PUBLICO_API_TICKET:\n"
+        "  1. Solicita tu ticket en https://api.mercadopublico.cl/modules/Participa.aspx\n"
+        "     (Clave Única → motivo: Solicitud de Ticket)\n"
+        "  2. GitHub → Settings → Secrets and variables → Actions → New repository secret\n"
+        "     Nombre: MERCADO_PUBLICO_API_TICKET\n"
+        "Alternativa: ejecutar el workflow en un self-hosted runner (tu PC)."
+    )
+
+
+def fetch_offers_from_api(ticket: str) -> List[Dict[str, str]]:
+    """Obtener licitaciones publicadas vía API oficial (funciona desde cloud)."""
+    response = requests.get(
+        MP_API_URL,
+        params={"estado": "activas", "ticket": ticket},
+        timeout=120,
+    )
+    response.raise_for_status()
+    payload = response.json()
+
+    codigo = payload.get("Codigo")
+    if codigo not in (None, 0, "0"):
+        raise RuntimeError(
+            f"API Mercado Público error {codigo}: {payload.get('Mensaje', 'sin mensaje')}"
+        )
+
+    items = payload.get("Listado") or []
+    if not items:
+        raise RuntimeError("API retornó Listado vacío para estado=activas")
+
+    return [map_offer_from_api(item) for item in items]
+
+
+def map_offer_from_api(item: Dict) -> Dict[str, str]:
+    """Mapear licitación JSON de la API oficial al esquema interno."""
+    codigo = _get_nested(item, ("CodigoExterno",), ("Codigo",))
+    nombre = _get_nested(item, ("Nombre",), ("NombreLicitacion",))
+    descripcion = _get_nested(item, ("Descripcion",), ("DescripcionLicitacion",))
+    descripcion_producto = _get_nested(
+        item,
+        ("DescripcionProducto",),
+        ("NombreProducto",),
+    )
+    organismo = _get_nested(
+        item,
+        ("Comprador", "NombreOrganismo"),
+        ("Comprador", "NombreUnidad"),
+        ("NombreOrganismo",),
+    )
+    estado = _get_nested(item, ("CodigoEstado",), ("Estado",))
+    region = _get_nested(
+        item,
+        ("Comprador", "RegionUnidad"),
+        ("Comprador", "Region"),
+        ("Region",),
+    )
+    comuna = _get_nested(
+        item,
+        ("Comprador", "ComunaUnidad"),
+        ("Comprador", "Comuna"),
+        ("Comuna",),
+    )
+    tipo_oferta = _get_nested(
+        item,
+        ("TipoLicitacion",),
+        ("Tipo",),
+        ("CodigoTipoLicitacion",),
+    )
+    moneda = _get_nested(item, ("Moneda",), ("CodigoMoneda",))
+    monto_raw = _get_nested(
+        item,
+        ("MontoEstimado",),
+        ("Monto",),
+    )
+    fecha_publicacion = _get_nested(
+        item,
+        ("Fechas", "FechaPublicacion"),
+        ("FechaPublicacion",),
+        ("Fechas", "FechaCreacion"),
+    )
+    fecha_cierre = _get_nested(
+        item,
+        ("Fechas", "FechaCierre"),
+        ("FechaCierre",),
+    )
+    link = _get_nested(item, ("Link",), ("Url",), ("UrlLicitacion",))
+    if not link and codigo:
+        link = (
+            "http://www.mercadopublico.cl/Procurement/Modules/RFB/"
+            f"DetailsAcquisition.aspx?idLicitacion={codigo}"
+        )
+
+    return {
+        "codigo_externo": codigo,
+        "nombre": nombre,
+        "descripcion": descripcion,
+        "descripcion_producto": descripcion_producto,
+        "organismo": organismo,
+        "estado": estado,
+        "region": region,
+        "comuna": comuna,
+        "tipo_oferta": tipo_oferta,
+        "moneda": moneda,
+        "monto_estimado": parse_monto(monto_raw),
+        "fecha_publicacion": parse_date(fecha_publicacion),
+        "fecha_cierre": parse_date(fecha_cierre),
+        "link": link,
+    }
+
+
+def fetch_offers(
+    feed_url: str,
+    api_ticket: str = "",
+    source: str = "auto",
+) -> Tuple[List[Dict[str, str]], str]:
+    """Descargar ofertas: API en CI, CSV en local (con fallback)."""
+    logger = get_logger()
+    ticket = (api_ticket or _api_ticket()).strip()
+    in_github = os.environ.get("GITHUB_ACTIONS") == "true"
+    source = (source or "auto").lower()
+
+    if source not in {"auto", "api", "csv"}:
+        raise ValueError(f"source inválido: {source}")
+
+    if source == "csv":
+        offers_data, filename = download_csv(feed_url)
+        return [map_offer(row) for row in offers_data], filename
+
+    if source == "api":
+        if not ticket:
+            raise RuntimeError(
+                "source=api requiere MERCADO_PUBLICO_API_TICKET o --api-ticket"
+            )
+        logger.info("Obteniendo ofertas vía API oficial (estado=activas)...")
+        return fetch_offers_from_api(ticket), "api:estado=activas"
+
+    if ticket:
+        try:
+            logger.info("Obteniendo ofertas vía API oficial (estado=activas)...")
+            return fetch_offers_from_api(ticket), "api:estado=activas"
+        except Exception as exc:
+            if in_github:
+                raise RuntimeError(f"API Mercado Público falló: {exc}") from exc
+            logger.warning("API falló, intentando CSV: %s", exc)
+
+    if in_github:
+        raise RuntimeError(_github_actions_csv_blocked_message())
+
+    offers_data, filename = download_csv(feed_url)
+    return [map_offer(row) for row in offers_data], filename
 
 
 def _warmup_portal_session(session) -> None:
@@ -384,7 +558,52 @@ def map_offer(row: Dict[str, str]) -> Dict[str, str]:
     }
 
 
-def update_offers(feed_url: str = DEFAULT_FEED_URL):
+def _use_google_sheets(local_only: bool) -> bool:
+    if local_only:
+        return False
+    if not os.environ.get("GOOGLE_SHEETS_ID") or not os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON"):
+        raise RuntimeError(
+            "Google Sheets no configurado. Para prueba local usa --local-only "
+            "o define GOOGLE_SHEETS_ID y GOOGLE_SERVICE_ACCOUNT_JSON en .env"
+        )
+    return True
+
+
+def _get_existing_codes(use_sheets: bool) -> set:
+    existing_codes = set()
+    if use_sheets:
+        existing_offers = get_sheet_data("ofertas")
+        if existing_offers and len(existing_offers) > 1:
+            for row in existing_offers[1:]:
+                if row and len(row) > 0:
+                    existing_codes.add(str(row[0]).strip())
+        return existing_codes
+
+    with get_conn() as conn:
+        rows = conn.execute("SELECT codigo_externo FROM offers").fetchall()
+        for row in rows:
+            if row["codigo_externo"]:
+                existing_codes.add(str(row["codigo_externo"]).strip())
+    return existing_codes
+
+
+def _clean_old_offers_local(days: int = 30) -> int:
+    cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM offers WHERE updated_at IS NOT NULL AND updated_at < ?",
+            (cutoff_date,),
+        )
+        conn.commit()
+        return cur.rowcount
+
+
+def update_offers(
+    feed_url: str = DEFAULT_FEED_URL,
+    api_ticket: str = "",
+    local_only: bool = False,
+    source: str = "auto",
+):
     """Descargar ofertas de Mercado Público y guardar en Google Sheets"""
 
     stats = {
@@ -400,31 +619,28 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL):
     try:
 
         print("[INFO] Iniciando actualización de ofertas...")
+        use_sheets = _use_google_sheets(local_only)
+        if local_only:
+            print("[INFO] Modo local: solo SQLite (sin Google Sheets)")
         
         # Inicializar base de datos (crear tabla si no existe)
         init_db()
 
-        # DESCARGAR CSV
-        offers_data, filename = download_csv(feed_url)
-
-        print(
-            f"[INFO] Mercado Público retornó {len(offers_data)} filas desde {filename}"
+        # DESCARGAR OFERTAS (API en GitHub Actions, CSV en local)
+        offers_raw, source_name = fetch_offers(
+            feed_url,
+            api_ticket=api_ticket,
+            source=source,
         )
 
-        # MAPEAR OFERTAS
-        offers_raw = [map_offer(row) for row in offers_data]
+        print(
+            f"[INFO] Mercado Público retornó {len(offers_raw)} ofertas desde {source_name}"
+        )
 
         print(f"[INFO] {len(offers_raw)} ofertas mapeadas")
 
         # OBTENER EXISTENTES
-        existing_offers = get_sheet_data("ofertas")
-
-        existing_codes = set()
-
-        if existing_offers and len(existing_offers) > 1:
-            for row in existing_offers[1:]:
-                if row and len(row) > 0:
-                    existing_codes.add(str(row[0]).strip())
+        existing_codes = _get_existing_codes(use_sheets)
 
         print(f"[INFO] Existen {len(existing_codes)} ofertas previas")
 
@@ -523,28 +739,30 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL):
                 f"[BATCH] Insertando {i} - {i + len(chunk)}"
             )
 
-            # Insert to Google Sheets (using google_sheets_values)
-            gs_rows = [item[0] for item in chunk]
-            append_many_rows("ofertas", gs_rows)
-
             # Insert to SQLite database (using sqlite_values)
             with get_conn() as conn:
                 for item in chunk:
                     sqlite_values = item[1]
                     conn.execute("""
                         INSERT OR REPLACE INTO offers 
-                        (codigo_externo, nombre, descripcion, organismo, estado, region, 
+                        (codigo_externo, nombre, descripcion, descripcion_producto, organismo, estado, region, 
                          comuna, tipo_oferta, moneda, monto_estimado, fecha_publicacion, 
-                         fecha_cierre, link, raw_json, updated_at, descripcion_producto, dias_que_quedan)
+                         fecha_cierre, link, raw_json, updated_at, dias_que_quedan)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, sqlite_values)
                 conn.commit()
 
-            # evitar quota exceeded
-            time.sleep(2)
+            if use_sheets:
+                gs_rows = [item[0] for item in chunk]
+                append_many_rows("ofertas", gs_rows)
+                # evitar quota exceeded
+                time.sleep(2)
 
         # LIMPIAR ANTIGUAS
-        stats["deleted_count"] = clean_old_offers()
+        if use_sheets:
+            stats["deleted_count"] = clean_old_offers()
+        else:
+            stats["deleted_count"] = _clean_old_offers_local()
 
         # ALERTAS DESACTIVADAS
         stats["total_matches"] = 0
@@ -555,18 +773,19 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL):
 
         run_id = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-        append_to_sheet("notification_runs", [
-            run_id,
-            datetime.now().isoformat(),
-            "SUCCESS",
-            stats["new_count"],
-            stats["updated_count"],
-            stats["deleted_count"],
-            stats["total_matches"],
-            stats["total_alerts_sent"],
-            "",
-            duration,
-        ])
+        if use_sheets:
+            append_to_sheet("notification_runs", [
+                run_id,
+                datetime.now().isoformat(),
+                "SUCCESS",
+                stats["new_count"],
+                stats["updated_count"],
+                stats["deleted_count"],
+                stats["total_matches"],
+                stats["total_alerts_sent"],
+                "",
+                duration,
+            ])
 
         print("[SUCCESS] Update completado")
         print(f"Nuevas: {stats['new_count']}")
@@ -581,18 +800,19 @@ def update_offers(feed_url: str = DEFAULT_FEED_URL):
 
         duration = int(time.time() - start_time)
 
-        append_to_sheet("notification_runs", [
-            f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            datetime.now().isoformat(),
-            "ERROR",
-            stats["new_count"],
-            stats["updated_count"],
-            stats["deleted_count"],
-            stats["total_matches"],
-            stats["total_alerts_sent"],
-            str(e),
-            duration,
-        ])
+        if not local_only and os.environ.get("GOOGLE_SHEETS_ID") and os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON"):
+            append_to_sheet("notification_runs", [
+                f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                datetime.now().isoformat(),
+                "ERROR",
+                stats["new_count"],
+                stats["updated_count"],
+                stats["deleted_count"],
+                stats["total_matches"],
+                stats["total_alerts_sent"],
+                str(e),
+                duration,
+            ])
 
         raise
 
@@ -604,10 +824,31 @@ if __name__ == "__main__":
         default=DEFAULT_FEED_URL,
         help="URL del feed CSV (default: Mercado Público oficial)"
     )
+    parser.add_argument(
+        "--api-ticket",
+        default="",
+        help="Ticket API Mercado Público (o usar env MERCADO_PUBLICO_API_TICKET)",
+    )
+    parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Guardar solo en SQLite local (sin Google Sheets)",
+    )
+    parser.add_argument(
+        "--source",
+        choices=["auto", "api", "csv"],
+        default="auto",
+        help="Fuente de datos: auto (API si hay ticket, si no CSV), api o csv",
+    )
     args = parser.parse_args()
     
     try:
-        update_offers(feed_url=args.feed_url)
+        update_offers(
+            feed_url=args.feed_url,
+            api_ticket=args.api_ticket,
+            local_only=args.local_only,
+            source=args.source,
+        )
     except Exception as e:
         print(f"[FATAL] {str(e)}")
         exit(1)

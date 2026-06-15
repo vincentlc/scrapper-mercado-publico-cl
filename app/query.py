@@ -60,6 +60,31 @@ def calculate_days_until_close(fecha_cierre: str) -> Optional[int]:
         return None
 
 
+MP_OFFER_LINK_TEMPLATE = (
+    "http://www.mercadopublico.cl/Procurement/Modules/RFB/"
+    "DetailsAcquisition.aspx?idLicitacion={codigo}"
+)
+
+
+def normalize_offer_link(item: Dict[str, object]) -> None:
+    """Asegurar link HTTP válido; reparar filas con fecha en columna link."""
+    codigo = str(item.get("codigo_externo") or "").strip()
+    link = str(item.get("link") or "").strip()
+    fecha_cierre = str(item.get("fecha_cierre") or "").strip()
+
+    if link.startswith(("http://", "https://")):
+        return
+
+    if link and not fecha_cierre and ("T" in link or link[:4].isdigit()):
+        item["fecha_cierre"] = link
+        fecha_cierre = link
+
+    if codigo:
+        item["link"] = MP_OFFER_LINK_TEMPLATE.format(codigo=codigo)
+    else:
+        item["link"] = ""
+
+
 def build_offer_filters(
     keyword: Optional[str] = None,
     tipo_oferta: Optional[str] = None,

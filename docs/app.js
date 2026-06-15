@@ -1,7 +1,7 @@
 // ========== CONFIGURACIÓN ==========
 // Detectar API base automáticamente
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? `http://${window.location.hostname}:8000`
+  ? window.location.origin
   : "https://scrapper-mercado-publico-cl.vercel.app";
 
 const filterFields = [
@@ -111,6 +111,20 @@ function formatDaysRemaining(daysValue) {
   // Expected format from sheet: "5d, 3h" or similar
   if (!daysValue) return "";
   return String(daysValue);
+}
+
+function isValidOfferLink(link) {
+  const value = String(link ?? "").trim();
+  return value.startsWith("http://") || value.startsWith("https://");
+}
+
+function offerDetailUrl(offer) {
+  if (isValidOfferLink(offer.link)) {
+    return offer.link;
+  }
+  const codigo = String(offer.codigo_externo ?? "").trim();
+  if (!codigo) return "";
+  return `http://www.mercadopublico.cl/Procurement/Modules/RFB/DetailsAcquisition.aspx?idLicitacion=${encodeURIComponent(codigo)}`;
 }
 
 function getFiltersFromForm() {
@@ -227,8 +241,9 @@ function renderOffers(offers) {
     const row = document.createElement("tr");
 
     // Hacer el código clickeable si hay un link disponible
-    const codigoHtml = offer.link
-      ? `<a href="${offer.link}" target="_blank" style="color: #0066cc; text-decoration: underline; cursor: pointer;">${escapeHtml(offer.codigo_externo)}</a>`
+    const detailUrl = offerDetailUrl(offer);
+    const codigoHtml = detailUrl
+      ? `<a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer" style="color: #0066cc; text-decoration: underline; cursor: pointer;">${escapeHtml(offer.codigo_externo)}</a>`
       : escapeHtml(offer.codigo_externo);
 
     row.innerHTML = `
@@ -253,8 +268,9 @@ function renderOffers(offers) {
     card.className = "offer-card";
 
     // Hacer el código clickeable
-    const codigoDisplay = offer.link
-      ? `<a href="${offer.link}" target="_blank" style="color: #0066cc; text-decoration: underline; cursor: pointer;">${escapeHtml(offer.codigo_externo)}</a>`
+    const detailUrl = offerDetailUrl(offer);
+    const codigoDisplay = detailUrl
+      ? `<a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer" style="color: #0066cc; text-decoration: underline; cursor: pointer;">${escapeHtml(offer.codigo_externo)}</a>`
       : escapeHtml(offer.codigo_externo);
 
     card.innerHTML = `
@@ -292,9 +308,9 @@ function renderOffers(offers) {
       </p>
 
       ${
-        offer.link
+        detailUrl
           ? `
-            <a href="${offer.link}" target="_blank">
+            <a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer">
               Ver en Mercado Público →
             </a>
           `

@@ -1,8 +1,10 @@
+import os
 import unittest
 from unittest.mock import patch
 
 from scripts.update_offers import (
     map_offer,
+    map_offer_from_api,
     parse_csv_bytes,
     parse_date,
     parse_monto,
@@ -157,66 +159,92 @@ class TestUpdateOffersParsing(unittest.TestCase):
             "1000000.0",
         )
 
+    def test_map_offer_from_api_nested_fields(self):
+        item = {
+            "CodigoExterno": "1234-56-LP24",
+            "Nombre": "Compra equipos",
+            "Descripcion": "Descripcion licitacion",
+            "CodigoEstado": "5",
+            "TipoLicitacion": "LP",
+            "Moneda": "CLP",
+            "MontoEstimado": "1500000",
+            "Comprador": {
+                "NombreOrganismo": "Ministerio Test",
+                "RegionUnidad": "Metropolitana",
+                "ComunaUnidad": "Santiago",
+            },
+            "Fechas": {
+                "FechaPublicacion": "2026-05-06T10:00:00",
+                "FechaCierre": "2026-06-01T15:00:00",
+            },
+        }
+
+        mapped = map_offer_from_api(item)
+
+        self.assertEqual(mapped["codigo_externo"], "1234-56-LP24")
+        self.assertEqual(mapped["organismo"], "Ministerio Test")
+        self.assertEqual(mapped["region"], "Metropolitana")
+        self.assertIn("2026", mapped["fecha_publicacion"])
+        self.assertTrue(mapped["link"].endswith("idLicitacion=1234-56-LP24"))
+
 
 class TestUpdateOffersGoogleSheets(unittest.TestCase):
-    """Tests integración Google Sheets"""
+    """Tests integración update_offers"""
 
-    @patch("scripts.update_offers.clean_old_offers")
-    @patch("scripts.update_offers.append_many_rows")
-    @patch("scripts.update_offers.append_to_sheet")
-    @patch("scripts.update_offers.get_sheet_data")
-    @patch("scripts.update_offers.download_csv")
-    def test_update_offers_integration(
+    @patch("scripts.update_offers._get_existing_codes", return_value=set())
+    @patch("scripts.update_offers._clean_old_offers_local", return_value=0)
+    @patch("scripts.update_offers.fetch_offers")
+    def test_update_offers_local_integration(
         self,
-        mock_download,
-        mock_get_data,
-        mock_append_single,
-        mock_append_many,
-        mock_clean,
+        mock_fetch,
+        mock_clean_local,
+        mock_existing,
     ):
         from scripts.update_offers import update_offers
 
-        mock_clean.return_value = 0
-
-        mock_get_data.return_value = [
-            ["codigo_externo", "nombre"]
-        ]
-
-        mock_download.return_value = (
+        mock_fetch.return_value = (
             [
                 {
-                    "codigoexterno": "999-XX-99",
+                    "codigo_externo": "999-XX-99",
                     "nombre": "Test Offer",
                     "descripcion": "Descripcion",
-                    "productoname": "Producto",
-                    "nombreorganismo": "Org",
+                    "descripcion_producto": "Producto",
+                    "organismo": "Org",
+                    "estado": "5",
                     "region": "Metropolitana",
-                    "tipooferta": "LP",
-                    "montoestimado": "500000",
-                    "fechapublicacion": "01-05-2026",
-                    "fechacierre": "01-06-2026",
+                    "comuna": "",
+                    "tipo_oferta": "LP",
+                    "moneda": "CLP",
+                    "monto_estimado": "500000.0",
+                    "fecha_publicacion": "2026-05-01",
+                    "fecha_cierre": "2026-06-01",
+                    "link": "http://example.com",
                 }
             ],
             "feed.csv",
         )
 
-        result = update_offers()
+        result = update_offers(local_only=True)
 
         self.assertEqual(result["new_count"], 1)
-
-        self.assertTrue(mock_append_many.called)
-
-        self.assertTrue(mock_append_single.called)
+        mock_clean_local.assert_called_once()
 
     @patch("scripts.update_offers.clean_old_offers")
     @patch("scripts.update_offers.append_many_rows")
     @patch("scripts.update_offers.append_to_sheet")
-    @patch("scripts.update_offers.get_sheet_data")
-    @patch("scripts.update_offers.download_csv")
-    def test_deduplication(
+    @patch("scripts.update_offers._get_existing_codes", return_value=set())
+    @patch("scripts.update_offers.fetch_offers")
+    @patch.dict(
+        os.environ,
+        {
+            "GOOGLE_SHEETS_ID": "sheet-id",
+            "GOOGLE_SERVICE_ACCOUNT_JSON": '{"type":"service_account"}',
+        },
+    )
+    def test_update_offers_sheets_integration(
         self,
-        mock_download,
-        mock_get_data,
+        mock_fetch,
+        mock_existing,
         mock_append_single,
         mock_append_many,
         mock_clean,
@@ -225,34 +253,86 @@ class TestUpdateOffersGoogleSheets(unittest.TestCase):
 
         mock_clean.return_value = 0
 
-        mock_get_data.return_value = [
-            ["codigo_externo"]
-        ]
-
-        # mismo código repetido
-        mock_download.return_value = (
+        mock_fetch.return_value = (
             [
                 {
-                    "codigoexterno": "ABC-123",
+                    "codigo_externo": "999-XX-99",
+                    "nombre": "Test Offer",
+                    "descripcion": "Descripcion",
+                    "descripcion_producto": "Producto",
+                    "organismo": "Org",
+                    "estado": "5",
+                    "region": "Metropolitana",
+                    "comuna": "",
+                    "tipo_oferta": "LP",
+                    "moneda": "CLP",
+                    "monto_estimado": "500000.0",
+                    "fecha_publicacion": "2026-05-01",
+                    "fecha_cierre": "2026-06-01",
+                    "link": "http://example.com",
+                }
+            ],
+            "feed.csv",
+        )
+
+        result = update_offers(local_only=False)
+
+        self.assertEqual(result["new_count"], 1)
+        self.assertTrue(mock_append_many.called)
+        self.assertTrue(mock_append_single.called)
+
+    @patch("scripts.update_offers._get_existing_codes", return_value=set())
+    @patch("scripts.update_offers._clean_old_offers_local", return_value=0)
+    @patch("scripts.update_offers.fetch_offers")
+    def test_deduplication(
+        self,
+        mock_fetch,
+        mock_clean_local,
+        mock_existing,
+    ):
+        from scripts.update_offers import update_offers
+
+        mock_fetch.return_value = (
+            [
+                {
+                    "codigo_externo": "ABC-123",
                     "nombre": "Oferta 1",
+                    "descripcion": "",
+                    "descripcion_producto": "",
+                    "organismo": "",
+                    "estado": "",
+                    "region": "",
+                    "comuna": "",
+                    "tipo_oferta": "",
+                    "moneda": "",
+                    "monto_estimado": "0",
+                    "fecha_publicacion": "",
+                    "fecha_cierre": "",
+                    "link": "",
                 },
                 {
-                    "codigoexterno": "ABC-123",
+                    "codigo_externo": "ABC-123",
                     "nombre": "Oferta duplicada",
+                    "descripcion": "",
+                    "descripcion_producto": "",
+                    "organismo": "",
+                    "estado": "",
+                    "region": "",
+                    "comuna": "",
+                    "tipo_oferta": "",
+                    "moneda": "",
+                    "monto_estimado": "0",
+                    "fecha_publicacion": "",
+                    "fecha_cierre": "",
+                    "link": "",
                 },
             ],
             "feed.csv",
         )
 
-        result = update_offers()
+        result = update_offers(local_only=True)
 
         self.assertEqual(result["new_count"], 1)
-
-        args = mock_append_many.call_args[0]
-
-        inserted_rows = args[1]
-
-        self.assertEqual(len(inserted_rows), 1)
 
     @patch("scripts.update_offers.get_sheet_data")
     def test_existing_offers_detection(self, mock_get_data):

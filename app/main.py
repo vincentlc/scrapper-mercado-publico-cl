@@ -8,7 +8,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.db import get_conn, init_db
-from app.query import build_offer_filters, normalize_option_values, format_tipo_oferta, calculate_days_until_close
+from app.query import (
+    build_offer_filters,
+    normalize_option_values,
+    format_tipo_oferta,
+    calculate_days_until_close,
+    normalize_offer_link,
+)
 #from scripts.update_offers import run_update
 
 
@@ -48,9 +54,31 @@ def startup() -> None:
     init_db()
 
 
+def _doc_file(filename: str) -> FileResponse:
+    path = STATIC_DIR / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"{filename} not found")
+    return FileResponse(path)
+
+
 @app.get("/")
 def root() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/styles.css", include_in_schema=False)
+def styles_css() -> FileResponse:
+    return _doc_file("styles.css")
+
+
+@app.get("/app.js", include_in_schema=False)
+def app_js() -> FileResponse:
+    return _doc_file("app.js")
+
+
+@app.get("/register.html", include_in_schema=False)
+def register_html() -> FileResponse:
+    return _doc_file("register.html")
 
 
 '''@app.post("/api/update-offers")
@@ -114,6 +142,7 @@ def list_offers(
     
     # Enriquecer datos con tipo formateado y días restantes
     for item in items:
+        normalize_offer_link(item)
         item["tipo_oferta_formateado"] = format_tipo_oferta(item.get("tipo_oferta", ""))
         # Usar dias_que_quedan del DB si existe, sino calcular desde fecha_cierre
         dias_db = item.get("dias_que_quedan")
@@ -125,8 +154,7 @@ def list_offers(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
-@app.get("/api/filters/options")
-def filter_options() -> Dict[str, List[str]]:
+def _filter_options() -> Dict[str, List[str]]:
     fields = ["tipo_oferta", "estado", "organismo", "region", "comuna"]
     out: Dict[str, List[str]] = {}
     with get_conn() as conn:
@@ -136,6 +164,17 @@ def filter_options() -> Dict[str, List[str]]:
             ).fetchall()
             out[field] = normalize_option_values([dict(r) for r in rows])
     return out
+
+
+@app.get("/api/filters")
+def filter_options() -> Dict[str, List[str]]:
+    """Alias usado por el frontend y Vercel."""
+    return _filter_options()
+
+
+@app.get("/api/filters/options")
+def filter_options_legacy() -> Dict[str, List[str]]:
+    return _filter_options()
 
 
 @app.get("/api/saved-filters")

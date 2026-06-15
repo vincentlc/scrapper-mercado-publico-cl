@@ -33,10 +33,8 @@ from scripts.helpers import (
 from app.query import calculate_days_until_close
 from app.db import get_conn, init_db
 
-DEFAULT_FEED_URL = os.environ.get(
-    "MERCADO_PUBLICO_FEED_URL",
-    "https://www.mercadopublico.cl/Portal/att.ashx?id=5",
-)
+_FALLBACK_FEED_URL = "https://www.mercadopublico.cl/Portal/att.ashx?id=5"
+DEFAULT_FEED_URL = os.environ.get("MERCADO_PUBLICO_FEED_URL") or _FALLBACK_FEED_URL
 MP_PORTAL_ORIGIN = "https://www.mercadopublico.cl"
 MP_BROWSER_HEADERS = {
     "User-Agent": (

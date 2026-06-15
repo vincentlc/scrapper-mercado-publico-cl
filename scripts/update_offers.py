@@ -18,6 +18,7 @@ import re
 import subprocess
 import zipfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Tuple
@@ -83,6 +84,7 @@ MP_BROWSER_HEADERS = {
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOG_PATH = BASE_DIR / "data" / "update_trace.log"
 BATCH_SIZE = 200
+API_LIST_TIMEOUT = int(os.environ.get("MERCADO_PUBLICO_API_LIST_TIMEOUT", "300"))
 
 
 def get_logger() -> logging.Logger:
@@ -316,12 +318,17 @@ def _resolve_api_producto(item: Dict) -> str:
 
 def fetch_offers_from_api(ticket: str) -> List[Dict[str, str]]:
     """Obtener licitaciones publicadas vía API oficial (funciona desde cloud)."""
+    logger = get_logger()
+    logger.info(
+        "Llamando API estado=activas (puede tardar 1-3 min si hay miles de ofertas)..."
+    )
     response = requests.get(
         MP_API_URL,
         params={"estado": "activas", "ticket": ticket},
-        timeout=120,
+        timeout=API_LIST_TIMEOUT,
     )
     response.raise_for_status()
+    logger.info("API respondió (%s bytes), parseando...", len(response.content))
     payload = response.json()
 
     codigo = payload.get("Codigo")
@@ -334,7 +341,89 @@ def fetch_offers_from_api(ticket: str) -> List[Dict[str, str]]:
     if not items:
         raise RuntimeError("API retornó Listado vacío para estado=activas")
 
+    logger.info("API retornó %s ofertas activas", len(items))
     return [map_offer_from_api(item) for item in items]
+
+
+def _api_enrich_enabled() -> bool:
+    return os.environ.get("MERCADO_PUBLICO_API_ENRICH", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+
+
+def _api_enrich_workers() -> int:
+    try:
+        return max(1, min(12, int(os.environ.get("MERCADO_PUBLICO_API_ENRICH_WORKERS", "8"))))
+    except ValueError:
+        return 8
+
+
+def enrich_offers_parallel(ticket: str, offers: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    if not offers:
+        return offers
+    workers = _api_enrich_workers()
+    get_logger().info(
+        "Enriqueciendo lote de %s ofertas (%s llamadas paralelas)...",
+        len(offers),
+        workers,
+    )
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        return list(executor.map(lambda offer: enrich_offer_from_api(ticket, offer), offers))
+
+
+def _build_insert_row(offer: Dict[str, str], now_iso: str) -> Tuple[List, List]:
+    codigo = offer.get("codigo_externo", "")
+    minimal_raw = {
+        "codigo": codigo,
+        "producto": offer.get("descripcion_producto"),
+    }
+    dias_que_quedan = calculate_days_until_close(offer.get("fecha_cierre", ""))
+    fecha_publicacion_sheet = format_date_for_sheet(offer.get("fecha_publicacion", ""))
+    fecha_cierre_sheet = format_date_for_sheet(offer.get("fecha_cierre", ""), include_time=True)
+
+    gs_values = [
+        codigo,
+        offer.get("nombre", ""),
+        offer.get("descripcion", ""),
+        offer.get("descripcion_producto", ""),
+        offer.get("organismo", ""),
+        offer.get("estado", ""),
+        offer.get("region", ""),
+        offer.get("comuna", ""),
+        offer.get("tipo_oferta", ""),
+        offer.get("moneda", ""),
+        offer.get("monto_estimado", "0"),
+        fecha_publicacion_sheet,
+        fecha_cierre_sheet,
+        offer.get("link", ""),
+        json.dumps(minimal_raw, ensure_ascii=False),
+        now_iso,
+        now_iso,
+        now_iso,
+        dias_que_quedan if dias_que_quedan is not None else "",
+    ]
+    sqlite_values = [
+        codigo,
+        offer.get("nombre", ""),
+        offer.get("descripcion", ""),
+        offer.get("descripcion_producto", ""),
+        offer.get("organismo", ""),
+        offer.get("estado", ""),
+        offer.get("region", ""),
+        offer.get("comuna", ""),
+        offer.get("tipo_oferta", ""),
+        offer.get("moneda", ""),
+        offer.get("monto_estimado", "0"),
+        offer.get("fecha_publicacion", ""),
+        offer.get("fecha_cierre", ""),
+        offer.get("link", ""),
+        json.dumps(minimal_raw, ensure_ascii=False),
+        now_iso,
+        dias_que_quedan if dias_que_quedan is not None else "",
+    ]
+    return gs_values, sqlite_values
 
 
 def enrich_offer_from_api(ticket: str, offer: Dict[str, str]) -> Dict[str, str]:
@@ -776,94 +865,37 @@ def update_offers(
             f"[DEDUP] {len(unique_offers)} ofertas únicas"
         )
 
-        # PREPARAR INSERTS
-        rows_to_insert = []
-
+        new_offers = [
+            offer
+            for codigo, offer in unique_offers.items()
+            if codigo not in existing_codes
+        ]
+        stats["updated_count"] = len(unique_offers) - len(new_offers)
         now_iso = datetime.now().isoformat()
 
-        for codigo, offer in unique_offers.items():
+        print(f"[INSERT] {len(new_offers)} ofertas nuevas a procesar")
+        if using_api and active_ticket and _api_enrich_enabled():
+            print(
+                f"[INFO] Enriquecimiento API activo "
+                f"({_api_enrich_workers()} workers, lotes de {BATCH_SIZE})"
+            )
+        elif using_api:
+            print("[INFO] Enriquecimiento API desactivado (datos básicos del listado)")
 
-            # evitar reinsertar
-            if codigo in existing_codes:
-                stats["updated_count"] += 1
-                continue
+        for i in range(0, len(new_offers), BATCH_SIZE):
+            batch_offers = new_offers[i : i + BATCH_SIZE]
 
-            if using_api and active_ticket:
-                offer = enrich_offer_from_api(active_ticket, offer)
-                unique_offers[codigo] = offer
-                time.sleep(0.12)
+            if using_api and active_ticket and _api_enrich_enabled():
+                batch_offers = enrich_offers_parallel(active_ticket, batch_offers)
 
-            minimal_raw = {
-                "codigo": codigo,
-                "producto": offer.get("descripcion_producto"),
-            }
-            
-            # Calcular días restantes hasta cierre
-            dias_que_quedan = calculate_days_until_close(offer.get("fecha_cierre", ""))
-            fecha_publicacion_sheet = format_date_for_sheet(offer.get("fecha_publicacion", ""))
-            fecha_cierre_sheet = format_date_for_sheet(offer.get("fecha_cierre", ""), include_time=True)
-
-            values = [
-                offer.get("codigo_externo", ""),
-                offer.get("nombre", ""),
-                offer.get("descripcion", ""),
-                offer.get("descripcion_producto", ""),
-                offer.get("organismo", ""),
-                offer.get("estado", ""),
-                offer.get("region", ""),
-                offer.get("comuna", ""),
-                offer.get("tipo_oferta", ""),
-                offer.get("moneda", ""),
-                offer.get("monto_estimado", "0"),
-                fecha_publicacion_sheet,
-                fecha_cierre_sheet,
-                offer.get("link", ""),
-                json.dumps(minimal_raw, ensure_ascii=False),
-                now_iso,
-                now_iso,
-                now_iso,
-                dias_que_quedan if dias_que_quedan is not None else "",
-            ]
-
-            rows_to_insert.append((values, [
-                offer.get("codigo_externo", ""),
-                offer.get("nombre", ""),
-                offer.get("descripcion", ""),
-                offer.get("descripcion_producto", ""),
-                offer.get("organismo", ""),
-                offer.get("estado", ""),
-                offer.get("region", ""),
-                offer.get("comuna", ""),
-                offer.get("tipo_oferta", ""),
-                offer.get("moneda", ""),
-                offer.get("monto_estimado", "0"),
-                offer.get("fecha_publicacion", ""),
-                offer.get("fecha_cierre", ""),
-                offer.get("link", ""),
-                json.dumps(minimal_raw, ensure_ascii=False),
-                now_iso,
-                dias_que_quedan if dias_que_quedan is not None else "",
-            ]))
-
-            stats["new_count"] += 1
-
-        print(
-            f"[INSERT] Preparadas {len(rows_to_insert)} nuevas ofertas"
-        )
-
-        # INSERTS POR BATCH
-        for i in range(0, len(rows_to_insert), BATCH_SIZE):
-
-            chunk = rows_to_insert[i:i + BATCH_SIZE]
+            rows_chunk = [_build_insert_row(offer, now_iso) for offer in batch_offers]
 
             print(
-                f"[BATCH] Insertando {i} - {i + len(chunk)}"
+                f"[BATCH] Insertando {i + 1}-{i + len(rows_chunk)} de {len(new_offers)}"
             )
 
-            # Insert to SQLite database (using sqlite_values)
             with get_conn() as conn:
-                for item in chunk:
-                    sqlite_values = item[1]
+                for _, sqlite_values in rows_chunk:
                     conn.execute("""
                         INSERT OR REPLACE INTO offers 
                         (codigo_externo, nombre, descripcion, descripcion_producto, organismo, estado, region, 
@@ -874,10 +906,13 @@ def update_offers(
                 conn.commit()
 
             if use_sheets:
-                gs_rows = [item[0] for item in chunk]
+                gs_rows = [gs_values for gs_values, _ in rows_chunk]
                 append_many_rows("ofertas", gs_rows)
-                # evitar quota exceeded
                 time.sleep(2)
+
+            stats["new_count"] += len(rows_chunk)
+
+        print(f"[INSERT] Completadas {stats['new_count']} inserciones nuevas")
 
         # LIMPIAR ANTIGUAS
         if use_sheets:

@@ -97,13 +97,17 @@ function formatDateWithTime(dateStr) {
   const date = parseDate(dateStr);
   if (!date) return String(dateStr);
   
-  return date.toLocaleDateString('es-CL', { 
-    year: 'numeric', 
-    month: '2-digit', 
+  const datePart = date.toLocaleDateString('es-CL', {
+    year: 'numeric',
+    month: '2-digit',
     day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
   });
+  const timePart = date.toLocaleTimeString('es-CL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return `${datePart} ${timePart}`;
 }
 
 function formatDaysRemaining(daysValue) {
@@ -236,12 +240,12 @@ function renderOffers(offers) {
 
   for (const offer of offers) {
 
+    const detailUrl = offerDetailUrl(offer);
+
     // ===== TABLE =====
 
     const row = document.createElement("tr");
 
-    // Hacer el código clickeable si hay un link disponible
-    const detailUrl = offerDetailUrl(offer);
     const codigoHtml = detailUrl
       ? `<a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer" style="color: #0066cc; text-decoration: underline; cursor: pointer;">${escapeHtml(offer.codigo_externo)}</a>`
       : escapeHtml(offer.codigo_externo);
@@ -254,7 +258,7 @@ function renderOffers(offers) {
       <td data-col="organismo" class="hidden">${escapeHtml(offer.organismo)}</td>
       <td data-col="tipo_oferta">${escapeHtml(offer.tipo_oferta_formateado || offer.tipo_oferta)}</td>
       <td data-col="region" class="hidden">${escapeHtml(offer.region)}</td>
-      <td data-col="fecha_publicacion" class="hidden">${escapeHtml(offer.fecha_publicacion)}</td>
+      <td data-col="fecha_publicacion" class="hidden">${formatDate(offer.fecha_publicacion)}</td>
       <td data-col="fecha_cierre">${formatDateWithTime(offer.fecha_cierre)}</td>
       <td data-col="dias_para_cierre">${formatDaysRemaining(offer.dias_para_cierre)}</td>
     `;
@@ -268,7 +272,6 @@ function renderOffers(offers) {
     card.className = "offer-card";
 
     // Hacer el código clickeable
-    const detailUrl = offerDetailUrl(offer);
     const codigoDisplay = detailUrl
       ? `<a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer" style="color: #0066cc; text-decoration: underline; cursor: pointer;">${escapeHtml(offer.codigo_externo)}</a>`
       : escapeHtml(offer.codigo_externo);
@@ -298,7 +301,7 @@ function renderOffers(offers) {
 
       <p>
         <strong>Publicación:</strong>
-        ${escapeHtml(offer.fecha_publicacion)}
+        ${formatDate(offer.fecha_publicacion)}
       </p>
 
       <p>
@@ -351,8 +354,8 @@ async function loadOffers(page = 1) {
     const data = await res.json();
     console.log("OFFERS RESPONSE:", data);
 
-
-    renderOffers(data.items || []);
+    const items = data.items || data.offers || [];
+    renderOffers(items);
 
   } catch (err) {
 

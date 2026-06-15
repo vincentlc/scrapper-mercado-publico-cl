@@ -35,6 +35,39 @@ from app.db import get_conn, init_db
 
 _FALLBACK_FEED_URL = "https://www.mercadopublico.cl/Portal/att.ashx?id=5"
 MP_API_URL = "https://api.mercadopublico.cl/servicios/v1/publico/licitaciones.json"
+API_ESTADOS = {
+    "5": "Publicada",
+    "6": "Cerrada",
+    "7": "Desierta",
+    "8": "Adjudicada",
+    "18": "Revocada",
+    "19": "Suspendida",
+}
+API_TIPOS = {
+    "L1": "Licitación Pública Menor a 100 UTM (L1)",
+    "LE": "Licitación Pública Entre 100 y 1000 UTM (LE)",
+    "LP": "Licitación Pública Mayor 1000 UTM (LP)",
+    "LS": "Licitación Pública Servicios personales especializados (LS)",
+    "A1": "Licitación Privada por Licitación Pública anterior sin oferentes (A1)",
+    "B1": "Licitación Privada por otras causales, excluidas de la ley de Compras",
+    "J1": "Licitación Privada por Servicios de Naturaleza Confidencial",
+    "F1": "Licitación Privada por Convenios con Personas Jurídicas Extranjeras fuera del Territorio Nacional",
+    "E1": "Licitación Privada por Remanente de Contrato anterior",
+    "CO": "Licitación Privada entre 100 y 1000 UTM",
+    "B2": "Licitación Privada Mayor a 1000 UTM",
+    "A2": "Trato Directo por Producto de Licitación Privada anterior sin oferentes o desierta",
+    "D1": "Trato Directo por Proveedor Único (D1)",
+    "E2": "Licitación Privada Menor a 100 UTM",
+    "C2": "Trato Directo (Cotización) (C2)",
+    "C1": "Compra Directa (Orden de compra) (C1)",
+    "F2": "Trato Directo (Cotización) (F2)",
+    "F3": "Compra Directa (Orden de compra) (F3)",
+    "G2": "Directo (Cotización) (G2)",
+    "G1": "Compra Directa (Orden de compra) (G1)",
+    "R1": "Orden de Compra menor a 3 UTM (R1)",
+    "CA": "Orden de Compra sin Resolución (CA)",
+    "SE": "Orden de Compra proveniente de adquisición sin emisión automática de OC (SE)",
+}
 DEFAULT_FEED_URL = os.environ.get("MERCADO_PUBLICO_FEED_URL") or _FALLBACK_FEED_URL
 MP_PORTAL_ORIGIN = "https://www.mercadopublico.cl"
 MP_BROWSER_HEADERS = {
@@ -152,6 +185,20 @@ def parse_date(value: str) -> str:
     return value
 
 
+def format_date_for_sheet(value: str, include_time: bool = False) -> str:
+    """Formatear fecha para Google Sheets (dd/mm/yyyy o con hora)."""
+    iso_value = parse_date(value)
+    if not iso_value:
+        return value
+    try:
+        dt = datetime.fromisoformat(iso_value)
+        if include_time:
+            return dt.strftime("%d/%m/%Y %H:%M:%S")
+        return dt.strftime("%d/%m/%Y")
+    except ValueError:
+        return value
+
+
 def parse_csv_bytes(raw: bytes) -> List[Dict[str, str]]:
     """Parsear CSV desde bytes"""
     encoding = detect_encoding(raw)
@@ -222,6 +269,51 @@ def _github_actions_csv_blocked_message() -> str:
     )
 
 
+def _fetch_licitacion_detail_raw(ticket: str, codigo: str) -> Dict:
+    try:
+        response = requests.get(
+            MP_API_URL,
+            params={"codigo": codigo, "ticket": ticket},
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("Codigo") not in (None, 0, "0"):
+            return {}
+        items = payload.get("Listado") or []
+        return items[0] if items else {}
+    except requests.RequestException:
+        return {}
+
+
+def _resolve_api_estado(item: Dict) -> str:
+    raw = _get_nested(item, ("CodigoEstado",), ("Estado",))
+    return API_ESTADOS.get(str(raw), raw)
+
+
+def _resolve_api_tipo(item: Dict) -> str:
+    tipo = _get_nested(item, ("Tipo",), ("CodigoTipo",), ("CodigoTipoLicitacion",))
+    if tipo in API_TIPOS:
+        return API_TIPOS[tipo]
+    if tipo and len(tipo) > 4:
+        return tipo
+    return tipo
+
+
+def _resolve_api_producto(item: Dict) -> str:
+    items = item.get("Items")
+    if isinstance(items, dict):
+        listado = items.get("Listado") or []
+        if listado and isinstance(listado[0], dict):
+            return _get_nested(
+                listado[0],
+                ("NombreProducto",),
+                ("Descripcion",),
+                ("EspecificacionComprador",),
+            )
+    return _get_nested(item, ("DescripcionProducto",), ("NombreProducto",))
+
+
 def fetch_offers_from_api(ticket: str) -> List[Dict[str, str]]:
     """Obtener licitaciones publicadas vía API oficial (funciona desde cloud)."""
     response = requests.get(
@@ -245,57 +337,77 @@ def fetch_offers_from_api(ticket: str) -> List[Dict[str, str]]:
     return [map_offer_from_api(item) for item in items]
 
 
+def enrich_offer_from_api(ticket: str, offer: Dict[str, str]) -> Dict[str, str]:
+    """Completar oferta con detalle API (listado activas trae campos mínimos)."""
+    codigo = offer.get("codigo_externo", "").strip()
+    if not codigo:
+        return offer
+
+    detail = _fetch_licitacion_detail_raw(ticket, codigo)
+    if not detail:
+        return offer
+
+    enriched = map_offer_from_api({**offer, **detail})
+    merged = dict(offer)
+    for key, value in enriched.items():
+        if value:
+            merged[key] = value
+    return merged
+
+
 def map_offer_from_api(item: Dict) -> Dict[str, str]:
     """Mapear licitación JSON de la API oficial al esquema interno."""
-    codigo = _get_nested(item, ("CodigoExterno",), ("Codigo",))
-    nombre = _get_nested(item, ("Nombre",), ("NombreLicitacion",))
-    descripcion = _get_nested(item, ("Descripcion",), ("DescripcionLicitacion",))
-    descripcion_producto = _get_nested(
+    codigo = _get_nested(item, ("CodigoExterno",), ("Codigo",), ("codigo_externo",))
+    nombre = _get_nested(item, ("Nombre",), ("NombreLicitacion",), ("nombre",))
+    descripcion = _get_nested(
         item,
-        ("DescripcionProducto",),
-        ("NombreProducto",),
+        ("Descripcion",),
+        ("DescripcionLicitacion",),
+        ("descripcion",),
     )
+    descripcion_producto = _resolve_api_producto(item)
     organismo = _get_nested(
         item,
         ("Comprador", "NombreOrganismo"),
         ("Comprador", "NombreUnidad"),
         ("NombreOrganismo",),
+        ("organismo",),
     )
-    estado = _get_nested(item, ("CodigoEstado",), ("Estado",))
+    estado = _resolve_api_estado(item)
     region = _get_nested(
         item,
         ("Comprador", "RegionUnidad"),
         ("Comprador", "Region"),
         ("Region",),
+        ("region",),
     )
     comuna = _get_nested(
         item,
         ("Comprador", "ComunaUnidad"),
         ("Comprador", "Comuna"),
         ("Comuna",),
+        ("comuna",),
     )
-    tipo_oferta = _get_nested(
-        item,
-        ("TipoLicitacion",),
-        ("Tipo",),
-        ("CodigoTipoLicitacion",),
-    )
-    moneda = _get_nested(item, ("Moneda",), ("CodigoMoneda",))
+    tipo_oferta = _resolve_api_tipo(item)
+    moneda = _get_nested(item, ("Moneda",), ("CodigoMoneda",), ("moneda",))
     monto_raw = _get_nested(
         item,
         ("MontoEstimado",),
         ("Monto",),
+        ("monto_estimado",),
     )
     fecha_publicacion = _get_nested(
         item,
         ("Fechas", "FechaPublicacion"),
         ("FechaPublicacion",),
         ("Fechas", "FechaCreacion"),
+        ("fecha_publicacion",),
     )
     fecha_cierre = _get_nested(
         item,
         ("Fechas", "FechaCierre"),
         ("FechaCierre",),
+        ("fecha_cierre",),
     )
     link = _get_nested(item, ("Link",), ("Url",), ("UrlLicitacion",))
     if not link and codigo:
@@ -632,6 +744,8 @@ def update_offers(
             api_ticket=api_ticket,
             source=source,
         )
+        using_api = source_name.startswith("api")
+        active_ticket = (api_ticket or _api_ticket()).strip()
 
         print(
             f"[INFO] Mercado Público retornó {len(offers_raw)} ofertas desde {source_name}"
@@ -674,6 +788,11 @@ def update_offers(
                 stats["updated_count"] += 1
                 continue
 
+            if using_api and active_ticket:
+                offer = enrich_offer_from_api(active_ticket, offer)
+                unique_offers[codigo] = offer
+                time.sleep(0.12)
+
             minimal_raw = {
                 "codigo": codigo,
                 "producto": offer.get("descripcion_producto"),
@@ -681,6 +800,8 @@ def update_offers(
             
             # Calcular días restantes hasta cierre
             dias_que_quedan = calculate_days_until_close(offer.get("fecha_cierre", ""))
+            fecha_publicacion_sheet = format_date_for_sheet(offer.get("fecha_publicacion", ""))
+            fecha_cierre_sheet = format_date_for_sheet(offer.get("fecha_cierre", ""), include_time=True)
 
             values = [
                 offer.get("codigo_externo", ""),
@@ -694,8 +815,8 @@ def update_offers(
                 offer.get("tipo_oferta", ""),
                 offer.get("moneda", ""),
                 offer.get("monto_estimado", "0"),
-                offer.get("fecha_publicacion", ""),
-                offer.get("fecha_cierre", ""),
+                fecha_publicacion_sheet,
+                fecha_cierre_sheet,
                 offer.get("link", ""),
                 json.dumps(minimal_raw, ensure_ascii=False),
                 now_iso,

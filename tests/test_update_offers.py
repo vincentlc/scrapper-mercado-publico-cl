@@ -164,8 +164,8 @@ class TestUpdateOffersParsing(unittest.TestCase):
             "CodigoExterno": "1234-56-LP24",
             "Nombre": "Compra equipos",
             "Descripcion": "Descripcion licitacion",
-            "CodigoEstado": "5",
-            "TipoLicitacion": "LP",
+            "CodigoEstado": 5,
+            "Tipo": "LP",
             "Moneda": "CLP",
             "MontoEstimado": "1500000",
             "Comprador": {
@@ -184,8 +184,19 @@ class TestUpdateOffersParsing(unittest.TestCase):
         self.assertEqual(mapped["codigo_externo"], "1234-56-LP24")
         self.assertEqual(mapped["organismo"], "Ministerio Test")
         self.assertEqual(mapped["region"], "Metropolitana")
+        self.assertEqual(mapped["estado"], "Publicada")
+        self.assertIn("Mayor 1000 UTM", mapped["tipo_oferta"])
         self.assertIn("2026", mapped["fecha_publicacion"])
         self.assertTrue(mapped["link"].endswith("idLicitacion=1234-56-LP24"))
+
+    def test_format_date_for_sheet(self):
+        from scripts.update_offers import format_date_for_sheet
+
+        self.assertEqual(format_date_for_sheet("2026-06-11T07:59:51"), "11/06/2026")
+        self.assertEqual(
+            format_date_for_sheet("2026-06-22T15:30:00", include_time=True),
+            "22/06/2026 15:30:00",
+        )
 
 
 class TestUpdateOffersGoogleSheets(unittest.TestCase):

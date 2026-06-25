@@ -10,13 +10,119 @@
     <header>
       <h1>Oferta Pública Chile Tracker</h1>
       <p>Accede a las licitaciones públicas de Chile en tiempo real. Crea filtros personalizados y recibe alertas automáticas por email cuando encuentres oportunidades que coincidan con tus criterios.</p>
-      <h2> Pronto - alerta por email </h2>
-      <!--<div class="header-actions">
-        <a href="./register.html" class="btn-register">📧 Registrarse para alertas</a>
-      </div>-->
+      <div class="header-actions">
+        <button id="toggleAlertForm" class="btn-register">📧 Crear Alerta por Email</button>
+      </div>
     </header>
 
     <main>
+      <!-- Modal para formulario de alertas -->
+      <div id="alertFormModal" class="modal">
+        <div class="modal-content">
+          <span class="close-button" id="closeAlertForm">&times;</span>
+          <h2>📧 Crear Alerta por Email</h2>
+          <p>Recibe notificaciones automáticas cuando aparezcan nuevas ofertas que coincidan con tus criterios.</p>
+          
+          <form id="alertSubscriptionForm" class="alert-form">
+            <div class="form-group">
+              <label for="alertEmail">Email *</label>
+              <input type="email" id="alertEmail" required placeholder="tu@email.com" />
+            </div>
+            
+            <div class="form-group">
+              <label for="alertFilterName">Nombre de la alerta *</label>
+              <input type="text" id="alertFilterName" required placeholder="ej: Computadores Santiago" />
+            </div>
+            
+            <div class="form-group">
+              <label for="alertKeyword">Palabra clave</label>
+              <input type="text" id="alertKeyword" placeholder="ej: software, computadores" />
+            </div>
+            
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="alertRegion">Región</label>
+                <select id="alertRegion">
+                  <option value="">Todas</option>
+                  <option value="Arica y Parinacota">Arica y Parinacota</option>
+                  <option value="Tarapacá">Tarapacá</option>
+                  <option value="Antofagasta">Antofagasta</option>
+                  <option value="Atacama">Atacama</option>
+                  <option value="Coquimbo">Coquimbo</option>
+                  <option value="Valparaíso">Valparaíso</option>
+                  <option value="Metropolitana">Metropolitana</option>
+                  <option value="O'Higgins">O'Higgins</option>
+                  <option value="Maule">Maule</option>
+                  <option value="Ñuble">Ñuble</option>
+                  <option value="Biobío">Biobío</option>
+                  <option value="Araucanía">Araucanía</option>
+                  <option value="Los Ríos">Los Ríos</option>
+                  <option value="Los Lagos">Los Lagos</option>
+                  <option value="Aysén">Aysén</option>
+                  <option value="Magallanes">Magallanes</option>
+                </select>
+              </div>
+              
+              <div class="form-group">
+                <label for="alertComuna">Comuna</label>
+                <select id="alertComuna">
+                  <option value="">Todas</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="alertOrganismo">Organismo</label>
+                <select id="alertOrganismo">
+                  <option value="">Todos</option>
+                </select>
+              </div>
+              
+              <div class="form-group">
+                <label for="alertTipoOferta">Tipo de Oferta</label>
+                <select id="alertTipoOferta">
+                  <option value="">Todos</option>
+                  <option value="Licitación Pública">Licitación Pública</option>
+                  <option value="Licitación Privada">Licitación Privada</option>
+                  <option value="Trato Directo">Trato Directo</option>
+                  <option value="Compra Directa">Compra Directa</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="alertMontoMin">Monto mínimo (CLP)</label>
+                <input type="number" id="alertMontoMin" placeholder="ej: 1000000" min="0" />
+              </div>
+              
+              <div class="form-group">
+                <label for="alertMontoMax">Monto máximo (CLP)</label>
+                <input type="number" id="alertMontoMax" placeholder="ej: 100000000" min="0" />
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label for="alertUtmRange">Rango UTM</label>
+              <select id="alertUtmRange">
+                <option value="">Todos</option>
+                <option value="<100">Menor a 100 UTM</option>
+                <option value="100-1000">100 a 1000 UTM</option>
+                <option value=">1000">Mayor a 1000 UTM</option>
+              </select>
+            </div>
+            
+            <div class="form-actions">
+              <button type="submit" class="btn-primary">Crear Alerta</button>
+              <button type="button" class="btn-secondary" id="cancelAlertForm">Cancelar</button>
+            </div>
+            
+            <div id="alertFormStatus" class="form-status"></div>
+          </form>
+        </div>
+      </div>
+
       <section class="panel">
         <h2>Filtros</h2>
         <div class="grid">

@@ -931,9 +931,34 @@ def update_offers(
         else:
             stats["deleted_count"] = _clean_old_offers_local()
 
-        # ALERTAS DESACTIVADAS
+        # PROCESAR ALERTAS (solo si no es modo local y hay ofertas nuevas)
         stats["total_matches"] = 0
         stats["total_alerts_sent"] = 0
+        
+        # Integrar sistema de alertas si hay ofertas nuevas
+        if use_sheets and new_offers:
+            try:
+                from scripts.alerts.scheduler import check_and_queue_new_offers
+                from scripts.alerts.models import Offer as AlertOffer
+                
+                # Convertir ofertas nuevas a objetos Offer del sistema de alertas
+                alert_offers = [
+                    AlertOffer.from_dict(offer) for offer in new_offers
+                ]
+                
+                # Verificar ofertas nuevas y generar cola de emails
+                alert_stats = check_and_queue_new_offers(alert_offers)
+                
+                stats["total_matches"] = alert_stats.get("matches_found", 0)
+                stats["total_alerts_sent"] = alert_stats.get("queue_items_created", 0)
+                
+                logger.info(
+                    f"[ALERTS] {stats['total_matches']} coincidencias encontradas, "
+                    f"{stats['total_alerts_sent']} emails en cola"
+                )
+            except Exception as e:
+                logger.warning(f"[ALERTS] Error procesando alertas: {str(e)}")
+                # Continuar sin fallar el update
 
         # REGISTRAR EJECUCIÓN
         duration = int(time.time() - start_time)

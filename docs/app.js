@@ -631,6 +631,113 @@ function showColumn(colName, table) {
   });
 }
 
+// ========== ALERT SUBSCRIPTION ==========
+
+function initializeAlertForm() {
+  const modal = document.getElementById("alertFormModal");
+  const toggleBtn = document.getElementById("toggleAlertForm");
+  const closeBtn = document.getElementById("closeAlertForm");
+  const cancelBtn = document.getElementById("cancelAlertForm");
+  const form = document.getElementById("alertSubscriptionForm");
+  const statusEl = document.getElementById("alertFormStatus");
+
+  // Mostrar/Ocultar modal
+  function showModal() {
+    if (modal) modal.classList.add("show");
+  }
+
+  function hideModal() {
+    if (modal) modal.classList.remove("show");
+    statusEl.className = "form-status";
+    statusEl.textContent = "";
+    form.reset();
+  }
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", showModal);
+  }
+
+  if (closeBtn) {
+    closeBtn.addEventListener("click", hideModal);
+  }
+
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", hideModal);
+  }
+
+  // Cerrar modal al hacer click fuera
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        hideModal();
+      }
+    });
+  }
+
+  // Manejar envío del formulario
+  if (form) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      
+      const email = document.getElementById("alertEmail")?.value.trim();
+      const filterName = document.getElementById("alertFilterName")?.value.trim();
+      
+      if (!email || !filterName) {
+        showStatus("Por favor completa los campos obligatorios", "error");
+        return;
+      }
+
+      // Recolectar criterios del formulario
+      const filterCriteria = {
+        keyword: document.getElementById("alertKeyword")?.value.trim() || null,
+        region: document.getElementById("alertRegion")?.value.trim() || null,
+        comuna: document.getElementById("alertComuna")?.value.trim() || null,
+        organismo: document.getElementById("alertOrganismo")?.value.trim() || null,
+        tipo_oferta: document.getElementById("alertTipoOferta")?.value.trim() || null,
+        monto_min: document.getElementById("alertMontoMin")?.value ? Number(document.getElementById("alertMontoMin").value) : null,
+        monto_max: document.getElementById("alertMontoMax")?.value ? Number(document.getElementById("alertMontoMax").value) : null,
+        utm_range: document.getElementById("alertUtmRange")?.value.trim() || null,
+      };
+
+      // Enviar a la API
+      try {
+        showStatus("Creando alerta...", "");
+        
+        const response = await fetch(`${API_BASE}/api/subscribe`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            filter_name: filterName,
+            ...filterCriteria,
+          }),
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || "Error al crear la alerta");
+        }
+
+        showStatus(`¡Alerta creada exitosamente! Recibirás notificaciones para "${filterName}"`, "success");
+        
+        // Ocultar modal después de 2 segundos
+        setTimeout(hideModal, 2000);
+        
+      } catch (error) {
+        showStatus(`Error: ${error.message}`, "error");
+      }
+    });
+  }
+
+  function showStatus(message, type) {
+    statusEl.textContent = message;
+    statusEl.className = `form-status show ${type}`;
+  }
+}
+
 // ========== INIT ==========
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -643,6 +750,7 @@ document.addEventListener("DOMContentLoaded", () => {
   
   initializeColumnResize();
   initializeColumnToggle();
+  initializeAlertForm();
 
   document
     .getElementById("applyFilters")

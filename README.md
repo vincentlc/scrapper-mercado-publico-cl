@@ -1,423 +1,270 @@
-# 🇨🇱 Oferta Pública Chile Tracker - Scraper de Licitaciones
+# 📊 ScrapMercadoPublico
 
-Sistema de scraping y análisis de licitaciones públicas de Chile desde Mercado Público. Descarga en tiempo real, filtra, busca y visualiza ofertas públicas con datos actualizados.
+A modern Python and FastAPI project for monitoring public procurement opportunities in Chile from Mercado Público. The platform scrapes public tenders, stores them in a local database, exposes a searchable API, and powers a lightweight web experience for browsing and filtering opportunities.
 
-**Status:** ✅ Funcional (alertas por email aún en construcción)
+## 🧭 Overview
 
----
+ScrapMercadoPublico helps users track public tenders and procurement notices in Chile with a simple workflow:
 
-## ✨ Características Actuales
+- scrape offers from Mercado Público
+- normalize and enrich the data
+- store it locally in SQLite
+- expose filters and search through a FastAPI API
+- browse results through a lightweight frontend
 
-✅ **Scraping Automático**
-- Descarga ofertas cada 6h desde Mercado Público
-- CSV con 16 columnas de datos estructurados
-- Detección automática de encoding y formato
+The project is designed to be practical, easy to run locally, and ready for future expansion into subscriptions, email alerts, and richer analytics.
 
-✅ **Búsqueda y Filtros Avanzados**
-- Filtro por palabra clave
-- Filtro por rango UTM (Compra Ágil, LP, etc)
-- Filtro por estado, organismo, región, comuna
-- Filtro por rango de monto
-- Filtro por fecha de publicación y cierre
-- **Filtro por días restantes para cierre** (0 a 30 días)
+## ✅ Status
 
-✅ **Visualización**
-- Tabla responsive con todas las licitaciones
-- Cards para móvil
-- Código clickeable → abre en Mercado Público
-- Nombres formateados (Compra Ágil en <100 UTM)
-- **Fecha de cierre + Días restantes** (ej: "5d" para 5 días)
+- Core scraping and ingestion: working
+- API and filtering: working
+- Frontend browsing experience: working
+- Email alerting and subscriptions: planned
 
-✅ **Base de Datos**
-- SQLite local (app/data/licitaciones.db)
-- Schema robusto con migraciones automáticas
-- Búsqueda por código, nombre, descripción, producto
+## ✨ Key Features
 
-⏳ **En Desarrollo** (próximas fases)
-- Alertas por email (Mailgun)
-- Sistema de suscripción de usuarios
-- Filtros guardados por usuario
+- Automated offer ingestion from Mercado Público
+- Normalized tender data with enriched fields
+- Search and filtering by keyword, region, status, organization, amount, and closing date
+- Days-to-close calculation and filtering
+- Offer name formatting for UTM-based categories
+- FastAPI backend with SQLite persistence
+- Simple static frontend for browsing offers
+- Vercel-compatible serverless API structure
 
----
+## 🧱 Project Structure
 
-## 🚀 Cómo Reproducir (Guía Rápida)
+```text
+app/                  # FastAPI backend, DB access, query logic
+scripts/              # Scraping and integration helpers
+docs/                 # Frontend HTML/CSS/JS assets
+vercel-functions/     # Vercel serverless API entrypoints
+data/                 # SQLite database and runtime logs
+tests/                # Automated tests
+```
 
-### Requisitos
+## 🏗️ Architecture at a Glance
+
+The project follows a simple, practical architecture:
+
+- the scraper pulls data from Mercado Público
+- the data is normalized and stored in SQLite as the main local source of truth
+- the FastAPI backend serves filtered offers through a clean API
+- the frontend consumes that API for browsing and search
+- Google Sheets can be used as an optional operational layer for shared data workflows and integration scenarios
+- Vercel serverless functions provide an additional deployment path for API endpoints
+
+```mermaid
+flowchart LR
+    A[Mercado Público] --> B[Scraper<br/>scripts/update_offers.py]
+    B --> C[(SQLite<br/>data/licitaciones.db)]
+    B --> D[Google Sheets<br/>optional backend]
+    C --> E[FastAPI API<br/>app/main.py]
+    D --> E
+    E --> F[Static Frontend<br/>docs/]
+    E --> G[Vercel Functions<br/>vercel-functions/]
+```
+
+## 🛠️ Tech Stack
+
 - Python 3.9+
-- pip/venv
-- Git
+- FastAPI
+- SQLite
+- Uvicorn
+- Requests
+- pytest
+- Vercel serverless functions (optional deployment)
 
-### 1. Clonar y Setup
+## 🚀 Quick Start
+
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/vincentlc/scrapper-mercado-publico-cl.git
 cd ScrapMercadoPublico
+```
 
-# Crear venv
+### 2. Create and activate a virtual environment
+
+```bash
 python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# o en Windows:
-# .venv\Scripts\activate
+source .venv/bin/activate
+```
 
-# Instalar dependencias
+### 3. Install dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Ejecutar Scraper Localmente
+### 4. Run the scraper
 
 ```bash
-# Descargar ofertas desde Mercado Público
 python -m scripts.update_offers
-
-# Esto:
-# ✓ Descarga CSV de Mercado Público (último zip)
-# ✓ Parsea columnas automáticamente
-# ✓ Guarda en SQLite (app/data/licitaciones.db)
-# ✓ Valida y limpia datos
 ```
 
-### 3. Ejecutar API Backend
+This will download the latest public tender data, normalize it, and populate the local database.
+
+### 5. Start the API locally
 
 ```bash
-# Terminal 1: Backend FastAPI
 python -m uvicorn app.main:app --reload --port 8000
-
-# Abierto en http://localhost:8000
 ```
 
-### 4. Ver Frontend
+The API will be available at:
+
+- http://localhost:8000/
+- http://localhost:8000/api/offers
+
+### 6. Open the frontend
+
+From the repository root:
 
 ```bash
-# Terminal 2: Servir HTML estático
 cd docs
 python -m http.server 8080
-
-# Abierto en http://localhost:8080
 ```
 
-### 5. Probar API
+Then open http://localhost:8080 in your browser.
+
+## 🔗 API Overview
+
+### Offers endpoint
+
+```http
+GET /api/offers
+```
+
+Supports filtering by:
+
+- keyword
+- tipo_oferta
+- estado
+- organismo
+- region
+- comuna
+- utm_range
+- min_monto
+- max_monto
+- start_date
+- end_date
+- start_close_date
+- end_close_date
+- min_days_to_close
+- max_days_to_close
+- page
+- page_size
+
+Example:
 
 ```bash
-# Obtener ofertas
-curl "http://localhost:8000/api/offers?page=1&page_size=20"
-
-# Con filtros
-curl "http://localhost:8000/api/offers?keyword=software&region=Metropolitana&page=1"
-
-# Filtrar por días para cierre (5 a 10 días)
-curl "http://localhost:8000/api/offers?min_days_to_close=5&max_days_to_close=10"
+curl "http://localhost:8000/api/offers?keyword=software&region=Metropolitana&page=1&page_size=20"
 ```
 
----
+### Filters options endpoint
 
-## 📊 Estructura de Datos
-
-### Tabla: `offers`
-
-| Columna | Tipo | Descripción |
-|---------|------|-------------|
-| `codigo_externo` | TEXT (PK) | Código único: 681563-8-LE26 |
-| `nombre` | TEXT | Nombre de la licitación |
-| `descripcion` | TEXT | Descripción de la licitación |
-| `descripcion_producto` | TEXT | Descripción del producto/servicio |
-| `organismo` | TEXT | Nombre del organismo (municipalidad, etc) |
-| `estado` | TEXT | Estado actual (publicada, cerrada, etc) |
-| `region` | TEXT | Región de Chile |
-| `comuna` | TEXT | Comuna específica |
-| `tipo_oferta` | TEXT | Tipo (Compra Ágil, LP, etc) |
-| `moneda` | TEXT | Moneda (CLP, UF, etc) |
-| `monto_estimado` | REAL | Monto en números |
-| `fecha_publicacion` | TEXT | Fecha ISO (2026-05-18T10:30:00) |
-| `fecha_cierre` | TEXT | Fecha ISO con hora de cierre |
-| `link` | TEXT | URL directa en Mercado Público |
-| `raw_json` | TEXT | JSON con datos crudos (backup) |
-| `updated_at` | TEXT | Última actualización |
-
-### Respuesta API: /api/offers
-
-```json
-{
-  "items": [
-    {
-      "codigo_externo": "681563-8-LE26",
-      "nombre": "SERVICIO DE MANTENCION DE AREAS VERDES",
-      "nombre_formateado": "SERVICIO DE MANTENCION DE AREAS VERDES (Compra Ágil)",
-      "descripcion": "MANTENCION DE AREAS...",
-      "descripcion_producto": "Servicios de cuidado...",
-      "organismo": "Ilustre Municipalidad de Ránquil",
-      "estado": "Publicada",
-      "region": "Región del Ñuble",
-      "comuna": "Ránquil",
-      "tipo_oferta": "Licitación Pública inferior a 100 UTM (Compra Ágil)",
-      "moneda": "CLP",
-      "monto_estimado": 15000000,
-      "fecha_publicacion": "2026-05-18T10:30:00",
-      "fecha_cierre": "2026-05-27T15:17:00",
-      "dias_para_cierre": 9,
-      "link": "http://www.mercadopublico.cl/Procurement/Modules/RFB/DetailsAcquisition.aspx?idLicitacion=681563-8-LE26",
-      "updated_at": "2026-05-18T12:45:30"
-    }
-  ],
-  "total": 4656,
-  "page": 1,
-  "page_size": 20
-}
+```http
+GET /api/filters/options
 ```
 
----
+Returns available values for common filter fields such as offer type, status, organization, region, and commune.
 
-## 📝 Endpoints API
+### Saved filters endpoints
 
-### GET `/api/offers`
-
-Obtener ofertas con filtros opcionales.
-
-**Parámetros:**
-```
-?keyword=software              # Busca en nombre, descripción, producto, código
-&tipo_oferta=LP               # Tipo de oferta exacto
-&utm_range=lt100              # Rango UTM: lt100, 100_1000, 1000_2000, 2000_5000, gt5000
-&estado=Publicada             # Estado exacto
-&organismo=Municipalidad      # Organismo exacto
-&region=Metropolitana         # Región exacta
-&comuna=Santiago              # Comuna exacta
-&min_monto=1000000            # Monto mínimo
-&max_monto=50000000           # Monto máximo
-&start_date=2026-05-01        # Desde publicación (ISO)
-&end_date=2026-05-31          # Hasta publicación (ISO)
-&start_close_date=2026-05-20  # Desde cierre (ISO)
-&end_close_date=2026-06-30    # Hasta cierre (ISO)
-&min_days_to_close=5          # Mínimo días para cierre
-&max_days_to_close=15         # Máximo días para cierre
-&page=1                       # Número página
-&page_size=50                 # Registros por página (max 200)
+```http
+GET /api/saved-filters
+POST /api/saved-filters
+DELETE /api/saved-filters/{filter_id}
 ```
 
-**Ejemplo:**
-```bash
-GET /api/offers?keyword=software&min_days_to_close=3&max_days_to_close=10&page=1
-```
+These endpoints allow saving reusable query criteria for later use in the frontend.
 
-### GET `/api/filters/options`
+## 🗂️ Data Model
 
-Obtener valores únicos para dropdowns.
+The main table is `offers`, which stores normalized tender records with fields such as:
 
-**Respuesta:**
-```json
-{
-  "tipo_oferta": ["Licitación Pública...", "Compra Ágil", ...],
-  "estado": ["Publicada", "Cerrada", ...],
-  "organismo": ["Municipalidad X", "Empresa Y", ...],
-  "region": ["Región del Ñuble", "Metropolitana", ...],
-  "comuna": ["Santiago", "Ránquil", ...]
-}
-```
+- codigo_externo
+- nombre
+- descripcion
+- descripcion_producto
+- organismo
+- estado
+- region
+- comuna
+- tipo_oferta
+- moneda
+- monto_estimado
+- fecha_publicacion
+- fecha_cierre
+- dias_que_quedan
+- link
+- raw_json
+- updated_at
 
-### POST `/api/update-offers`
+The local database is created automatically on startup under `data/licitaciones.db`.
 
-Ejecutar actualización manual (scrapar ahora).
+## 🧪 Development Notes
+
+### Running tests
 
 ```bash
-curl -X POST http://localhost:8000/api/update-offers
-```
-
----
-
-## 🛠 Scripts Disponibles
-
-```bash
-# Descargar y procesar ofertas
-python -m scripts.update_offers
-
-# Validar/inicializar Google Sheets (solo si usas Sheets)
-python -m scripts.init_google_sheets
-
-# Ejecutar tests
 pytest tests/
-
-# Ver logs de última ejecución
-tail -f data/update_trace.log
 ```
 
----
+### Useful scripts
 
-## 🏗 Arquitectura Actual
-
-```
-ScrapMercadoPublico/
-├── app/
-│   ├── main.py               # FastAPI backend
-│   ├── db.py                 # SQLite init + migrations
-│   ├── query.py              # Lógica de filtros
-│   └── data/
-│       └── licitaciones.db   # Base de datos local
-│
-├── scripts/
-│   ├── update_offers.py      # Scraper principal
-│   ├── helpers.py            # Utilidades Google Sheets
-│   └── init_google_sheets.py # Validador Sheets
-│
-├── docs/
-│   ├── index.html            # Frontend (React-like vanilla JS)
-│   ├── app.js                # Lógica frontend
-│   ├── styles.css            # Estilos
-│   └── register.html         # Registro (preparado, no activo)
-│
-├── tests/
-│   ├── test_api_filters.py
-│   └── test_update_offers.py
-│
-├── vercel-functions/         # Backend serverless (preparado)
-│   ├── api/
-│   │   └── offers.js
-│   └── utils/
-│       └── google-sheets.js
-│
-├── requirements.txt          # Dependencias Python
-├── pytest.ini               # Config tests
-└── README.md               # Este archivo
-```
-
----
-
-## 🔄 Flujo de Datos
-
-```
-Mercado Público (ZIP CSV)
-          ↓
-  scripts/update_offers.py
-    - Descarga ZIP
-    - Parsea CSV (detecta encoding/delimitador)
-    - Normaliza columnas
-    - Valida datos
-          ↓
-   app/data/licitaciones.db (SQLite)
-          ↓
-    FastAPI Backend (app/main.py)
-    - GET /api/offers (con filtros)
-    - GET /api/filters/options
-          ↓
-  Frontend (docs/app.js)
-    - Tabla con datos
-    - Filtros interactivos
-    - Cards responsivas
-```
-
----
-
-## 📦 Dependencias
-
-```
-fastapi==0.115.6
-uvicorn==0.24.0
-requests==2.31.0
-python-dotenv==1.0.0
-pytest==7.4.3
-google-auth==2.27.0
-google-auth-oauthlib==1.2.0
-google-auth-httplib2==0.2.0
-google-api-python-client==2.108.0
-```
-
----
-
-## 🐛 Troubleshooting
-
-### "ModuleNotFoundError: No module named 'app'"
 ```bash
-# Asegúrate de estar en la carpeta raíz
-cd ~/Documents/Code/Cursor/ScrapMercadoPublico
-python -m uvicorn app.main:app
-```
-
-### "Error: Could not detect CSV header"
-```bash
-# El formato del CSV de Mercado Público cambió
-# Revisa con:
-python -c "from scripts.update_offers import download_csv; offers, _ = download_csv(); print(offers[0].keys())"
-```
-
-### "Base de datos vacía"
-```bash
-# Ejecuta scraper:
 python -m scripts.update_offers
-
-# Verifica:
-sqlite3 app/data/licitaciones.db "SELECT COUNT(*) FROM offers;"
+python -m scripts.init_google_sheets
 ```
 
----
+### Logs
 
-## ⏳ Próximos Pasos (Alertas por Email)
+The scraper writes execution details to:
 
-Actualmente **NO funciona** el sistema de alertas por email. Se está planificando:
-
-1. **Sistema de suscripción** → guardar emails + filtros
-2. **Detección de cambios** → nueva oferta coincide filtro
-3. **Envío Mailgun** → email con enlace a oferta
-4. **Desuscripción** → token único por email
-
-Ver: `PLAN_ALERTAS.md` (próximamente)
-
----
-
-## 📄 Licencia
-
-MIT
-
----
-
-## 👤 Autor
-
-Vincent Leclerc - [LinkedIn](https://www.linkedin.com/in/vincent-lec/) - [GitHub](https://github.com/vincentlc)
-
----
-
-## 🙏 Agradecimientos
-
-- Mercado Público de Chile (datos públicos)
-- Comunidad de scraping en Python
-│   ├── api/offers.js
-│   ├── api/register.js
-│   └── ...
-├── .github/workflows/
-│   └── update-offers.yml               ← NUEVO: GitHub Actions (Paso 5)
-├── .gitignore
-└── README.md                           ← Este archivo
+```text
+data/update_trace.log
 ```
 
----
+## 🚢 Deployment
 
-## 🔐 Secretos (se configura en Paso 2)
+The project includes a Vercel-ready structure under `vercel-functions/` for serverless deployment. Local development is currently centered on the FastAPI app and static frontend, while the Vercel endpoints can be used as an additional deployment target.
 
-GitHub > Settings > Secrets and variables > Actions:
+## 🛣️ Roadmap
 
-- `GOOGLE_SHEETS_ID` → ID del documento
-- `GOOGLE_SERVICE_ACCOUNT_JSON` → Credenciales JSON (base64)
-- `MAILGUN_API_KEY` → Para alertas por email
-- `MAILGUN_DOMAIN` → Dominio de Mailgun
+### Near term
 
----
+- complete and stabilize the alerting workflow
+- add email subscriptions and digest delivery
+- improve saved-filter management and user experience
 
-## 🎯 Próximo Paso
+### Medium term
 
-**Haz lo siguiente:**
+- introduce authentication and user accounts
+- add dashboards and reporting views
+- add export options for filtered results
 
-1. Crea Google Sheets con el schema de [docs/PASO_1_SCHEMA_SHEETS.md](docs/PASO_1_SCHEMA_SHEETS.md)
-2. Guarda el SPREADSHEET_ID
-3. Commit a Git:
-   ```bash
-   git add .
-   git commit -m "docs: add schema and architecture for v2 (serverless)"
-   git push origin main
-   ```
-4. Avísame cuando esté listo para continuar con Paso 2
+### Longer term
 
----
+- broaden integrations with external procurement sources
+- enable scheduled background jobs and monitoring
+- improve operational reliability and observability
 
-## 📞 Contacto / Portfolio
+## 📝 Recent Changes
 
-- **GitHub:** [vincentlc/scrapper-mercado-publico-cl](https://github.com/vincentlc/scrapper-mercado-publico-cl)
-- **LinkedIn:** [vincent-lec](https://www.linkedin.com/in/vincent-lec/)
+The current codebase includes several relevant improvements:
 
-**Status:** En desarrollo 🚀
+- richer offer naming with UTM-based formatting
+- days-to-close calculation and filtering support
+- improved API response fields for frontend rendering
+- database migration support for newer filter fields
+- updated documentation and project structure
+- frontend support for closing-date filters and display formatting
+
+## 🤝 Contributing
+
+Contributions are welcome. If you plan to work on the project, start by running the tests locally and keeping changes focused around the existing architecture.
+
+## 📄 License
+
+This project is provided as-is for educational and practical use. Please review the repository license before production use.

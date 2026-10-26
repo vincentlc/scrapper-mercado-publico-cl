@@ -19,8 +19,12 @@ const filterFields = [
   "max_days_to_close",
 ];
 
-// Dropdown/date filters auto-apply on change (standard "faceted search" UX:
-// a discrete selection is a completed intent, unlike a free-text field).
+// Every filter except free-text "keyword" auto-applies on change (standard
+// "faceted search" UX: picking a dropdown value or committing a date/number
+// field is a completed intent, unlike typing into a text field where every
+// keystroke isn't). "change" fires once the value is committed (blur, Enter,
+// or a date-picker/number-stepper selection), so this doesn't fire per
+// keystroke even for the number inputs.
 const AUTO_APPLY_ON_CHANGE_FIELDS = [
   "tipo_oferta",
   "utm_range",
@@ -31,6 +35,8 @@ const AUTO_APPLY_ON_CHANGE_FIELDS = [
   "end_date",
   "start_close_date",
   "end_close_date",
+  "min_days_to_close",
+  "max_days_to_close",
 ];
 
 const DESCRIPTION_PREVIEW_LENGTH = 180;

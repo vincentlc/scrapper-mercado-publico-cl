@@ -19,6 +19,20 @@ const filterFields = [
   "max_days_to_close",
 ];
 
+// Dropdown/date filters auto-apply on change (standard "faceted search" UX:
+// a discrete selection is a completed intent, unlike a free-text field).
+const AUTO_APPLY_ON_CHANGE_FIELDS = [
+  "tipo_oferta",
+  "utm_range",
+  "organismo",
+  "region",
+  "comuna",
+  "start_date",
+  "end_date",
+  "start_close_date",
+  "end_close_date",
+];
+
 const DESCRIPTION_PREVIEW_LENGTH = 180;
 const PAGE_SIZE = 100;
 
@@ -59,27 +73,34 @@ function renderExpandableText(text, maxLength = DESCRIPTION_PREVIEW_LENGTH) {
   `;
 }
 
-// Parse date in multiple formats to handle Google Sheets exports
+// Parse date in multiple formats to handle Google Sheets exports.
+// IMPORTANT: Google Sheets rows are written as DD/MM/YYYY (see
+// scripts/update_offers.py:format_date_for_sheet). That format must be
+// parsed explicitly first: new Date("05/11/2026") is ambiguous and most
+// JS engines read slash-separated dates as MM/DD/YYYY, which silently
+// swaps day and month (e.g. "05/11/2026" = 5 Nov becomes 11 May).
 function parseDate(dateStr) {
   if (!dateStr) return null;
-  
-  // Try to parse as ISO format (2026-05-20T15:30:00)
-  let date = new Date(dateStr);
-  if (!isNaN(date.getTime())) return date;
-  
-  // Try to parse DD/MM/YYYY HH:MM:SS or DD/MM/YYYY
-  const ddmmyy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(dateStr);
-  if (ddmmyy) {
-    const day = parseInt(ddmmyy[1]);
-    const month = parseInt(ddmmyy[2]) - 1; // JS months are 0-indexed
-    const year = parseInt(ddmmyy[3]);
-    const hour = ddmmyy[4] ? parseInt(ddmmyy[4]) : 0;
-    const minute = ddmmyy[5] ? parseInt(ddmmyy[5]) : 0;
-    const second = ddmmyy[6] ? parseInt(ddmmyy[6]) : 0;
-    date = new Date(year, month, day, hour, minute, second);
+
+  const str = String(dateStr).trim();
+
+  // DD/MM/YYYY or DD-MM-YYYY, optionally with a time component.
+  const ddmmyyyy = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[\sT](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(str);
+  if (ddmmyyyy) {
+    const day = parseInt(ddmmyyyy[1], 10);
+    const month = parseInt(ddmmyyyy[2], 10) - 1; // JS months are 0-indexed
+    const year = parseInt(ddmmyyyy[3], 10);
+    const hour = ddmmyyyy[4] ? parseInt(ddmmyyyy[4], 10) : 0;
+    const minute = ddmmyyyy[5] ? parseInt(ddmmyyyy[5], 10) : 0;
+    const second = ddmmyyyy[6] ? parseInt(ddmmyyyy[6], 10) : 0;
+    const date = new Date(year, month, day, hour, minute, second);
     if (!isNaN(date.getTime())) return date;
   }
-  
+
+  // Fall back to native parsing for genuine ISO strings (2026-05-20T15:30:00).
+  const date = new Date(str);
+  if (!isNaN(date.getTime())) return date;
+
   return null;
 }
 
@@ -558,6 +579,7 @@ function initializeColumnResize() {
         isResizing = true;
         currentHeader = header;
         startX = e.clientX;
+        document.body.style.userSelect = "none";
         e.preventDefault();
       }
     });
@@ -576,7 +598,8 @@ function initializeColumnResize() {
   document.addEventListener("mouseup", () => {
     if (!isResizing) return;
     isResizing = false;
-    
+    document.body.style.userSelect = "";
+
     // Save widths
     const widths = {};
     headers.forEach((th, idx) => {
@@ -674,6 +697,28 @@ document.addEventListener("DOMContentLoaded", () => {
     .getElementById("applyFilters")
     ?.addEventListener("click", () => {
       loadOffers(1);
+    });
+
+  // Auto-apply as soon as the user picks a value: these are discrete,
+  // single-step choices (dropdown or date picker), so there is no
+  // "still typing" state to debounce like with free-text fields.
+  for (const field of AUTO_APPLY_ON_CHANGE_FIELDS) {
+    document
+      .getElementById(field)
+      ?.addEventListener("change", () => {
+        loadOffers(1);
+      });
+  }
+
+  // Keyword is free text: apply once the user presses Enter after typing
+  // a non-trivial search term, instead of on every keystroke or blur.
+  document
+    .getElementById("keyword")
+    ?.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      if (e.target.value.trim().length > 5) {
+        loadOffers(1);
+      }
     });
 
   document

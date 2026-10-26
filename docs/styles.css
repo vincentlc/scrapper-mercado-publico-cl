@@ -33,7 +33,25 @@ body {
 header {
   background: var(--color-primary);
   color: var(--color-white);
-  padding: clamp(20px, 5vw, 32px) clamp(16px, 8vw, 40px);
+  padding: clamp(12px, 2.5vw, 20px) clamp(16px, 8vw, 40px);
+}
+
+header h1 {
+  margin: 0 0 6px;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  line-height: 1.25;
+}
+
+header p {
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+
+header h2 {
+  margin: 6px 0 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  opacity: 0.9;
 }
 
 header .header-actions {
@@ -202,6 +220,9 @@ table {
   width: 100%;
   border-collapse: collapse;
   min-width: 100%;
+}
+
+th {
   user-select: none;
 }
 

@@ -14,6 +14,42 @@ function formatTipoOferta(tipo) {
   return value;
 }
 
+function parsePublicationDate(value) {
+  const str = String(value || '').trim();
+  if (!str) return null;
+
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(str);
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date.getTime();
+}
+
+function sortOffersByPublicationDesc(offers) {
+  return offers
+    .map((offer, idx) => ({ offer, idx, time: parsePublicationDate(offer.fecha_publicacion) }))
+    .sort((a, b) => {
+      const aValid = a.time !== null;
+      const bValid = b.time !== null;
+      if (aValid !== bValid) return aValid ? -1 : 1;
+      if (aValid && a.time !== b.time) return b.time - a.time;
+      return b.idx - a.idx;
+    })
+    .map((entry) => entry.offer);
+}
+
 function rowToOffer(headers, row) {
   const obj = {};
   headers.forEach((header, index) => {
@@ -44,7 +80,7 @@ function rowToOffer(headers, row) {
   };
 }
 
-module.exports = async function handler(req, res) {
+async function handler(req, res) {
   if (handleCORS(req, res)) return;
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -98,6 +134,8 @@ module.exports = async function handler(req, res) {
       offers = offers.filter((offer) => offer.comuna === comuna);
     }
 
+    offers = sortOffersByPublicationDesc(offers);
+
     const pageNumber = Math.max(1, Number(page) || 1);
     const pageSize = Math.min(200, Math.max(1, Number(page_size) || 100));
     const total = offers.length;
@@ -114,4 +152,8 @@ module.exports = async function handler(req, res) {
     console.error(error);
     return res.status(500).json({ error: error.message });
   }
-};
+}
+
+module.exports = handler;
+module.exports.parsePublicationDate = parsePublicationDate;
+module.exports.sortOffersByPublicationDesc = sortOffersByPublicationDesc;

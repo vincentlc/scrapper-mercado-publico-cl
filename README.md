@@ -179,6 +179,20 @@ DELETE /api/saved-filters/{filter_id}
 
 These endpoints allow saving reusable query criteria for later use in the frontend.
 
+## 📑 Offer Ordering, Pagination & Keepalive
+
+### Ordering
+
+`GET /api/offers` (served from `vercel-functions/api/offers.js`) returns offers sorted by `fecha_publicacion` descending, so the newest tenders show up first. Offers that share the same publication date are tied first by their row position in the "ofertas" sheet (rows added later are considered newer). Offers with an empty or unparseable `fecha_publicacion` are always placed last. Sorting runs after all query filters and before pagination is applied.
+
+### Pagination
+
+The response includes `items`, `total`, `page`, and `page_size`. The frontend (`docs/app.js`) uses `total` to render a "Showing X to Y of N" indicator with Previous/Next buttons under the results table, and resets to page 1 whenever a filter is applied or cleared.
+
+### Keepalive workflow
+
+`.github/workflows/keepalive-log.yml` runs weekly (Monday ~12:00 UTC) and on manual dispatch. It appends one line to `weekly_log.md` on the orphan `logs` branch (UTC timestamp, total offers in the sheet, most recent `fecha_publicacion`, and the latest `update-offers.yml` run conclusion), then calls `gh workflow enable update-offers.yml`. This guarantees the scraping workflow never gets auto-disabled by GitHub's 60-day-inactivity rule, even if a push to a non-default branch does not count as activity on its own. It reuses the same `GOOGLE_SHEETS_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON` secrets as `update-offers.yml`, no new secrets are required. Both workflows can be triggered manually from the Actions tab via `workflow_dispatch`.
+
 ## 🗂️ Data Model
 
 The main table is `offers`, which stores normalized tender records with fields such as:

@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "test": "node --test test/"
+  },
   "dependencies": {
     "google-auth-library": "^8.9.0",
     "googleapis": "^129.0.0",

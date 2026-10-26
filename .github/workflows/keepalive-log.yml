@@ -1,0 +1,79 @@
+name: Weekly Keepalive Log
+
+on:
+  schedule:
+    # Lunes ~12:00 UTC, minuto no redondo para evitar colisiones de carga
+    - cron: '17 12 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compute sheet stats
+        id: sheet_stats
+        env:
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m scripts.weekly_log_stats
+
+      - name: Get last update-offers run conclusion
+        id: last_run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          conclusion=$(gh run list --repo "${{ github.repository }}" --workflow=update-offers.yml --limit 1 --json conclusion --jq '.[0].conclusion // "sin corridas"')
+          echo "conclusion=${conclusion}" >> "$GITHUB_OUTPUT"
+
+      - name: Append weekly log entry to logs branch
+        env:
+          TOTAL: ${{ steps.sheet_stats.outputs.total }}
+          LATEST: ${{ steps.sheet_stats.outputs.latest_fecha_publicacion }}
+          CONCLUSION: ${{ steps.last_run.outputs.conclusion }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin logs 2>/dev/null || true
+
+          if git ls-remote --exit-code --heads origin logs > /dev/null 2>&1; then
+            git checkout -B logs origin/logs
+          else
+            git checkout --orphan logs
+            git rm -rf --cached . > /dev/null
+            git clean -fdx
+            echo "# Weekly keepalive log" > weekly_log.md
+            echo "" >> weekly_log.md
+          fi
+
+          fecha_utc=$(date -u +"%Y-%m-%d %H:%M UTC")
+          linea="- ${fecha_utc} | total_ofertas=${TOTAL} | fecha_publicacion_mas_reciente=${LATEST} | ultima_corrida_update_offers=${CONCLUSION}"
+          echo "${linea}" >> weekly_log.md
+
+          git add weekly_log.md
+          git commit -m "chore: weekly keepalive log entry"
+          git push origin logs
+
+      - name: Re-enable update-offers workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow enable update-offers.yml

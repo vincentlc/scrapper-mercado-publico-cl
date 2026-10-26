@@ -20,6 +20,9 @@ const filterFields = [
 ];
 
 const DESCRIPTION_PREVIEW_LENGTH = 180;
+const PAGE_SIZE = 100;
+
+let currentPage = 1;
 
 // ========== HELPERS ==========
 
@@ -327,7 +330,7 @@ function renderOffers(offers) {
 
 // ========== LOAD OFFERS ==========
 
-async function loadOffers(page = 1) {
+async function loadOffers(page = currentPage) {
 
   try {
 
@@ -336,7 +339,7 @@ async function loadOffers(page = 1) {
     const params = new URLSearchParams({
       ...filters,
       page,
-      page_size: 100,
+      page_size: PAGE_SIZE,
     });
 
     const res = await fetch(
@@ -354,14 +357,37 @@ async function loadOffers(page = 1) {
     const data = await res.json();
     console.log("OFFERS RESPONSE:", data);
 
+    currentPage = page;
+
     const items = data.items || data.offers || [];
     renderOffers(items);
+    renderPagination(data);
 
   } catch (err) {
 
     console.error("Error loading offers:", err);
 
   }
+}
+
+function renderPagination({ page, page_size, total } = {}) {
+  const info = document.getElementById("paginationInfo");
+  const prevButton = document.getElementById("prevPage");
+  const nextButton = document.getElementById("nextPage");
+
+  if (!info || !prevButton || !nextButton) return;
+
+  const pageNumber = Number(page) || 1;
+  const pageSize = Number(page_size) || PAGE_SIZE;
+  const totalCount = Number(total) || 0;
+
+  const start = totalCount === 0 ? 0 : (pageNumber - 1) * pageSize + 1;
+  const end = Math.min(pageNumber * pageSize, totalCount);
+
+  info.textContent = `Mostrando ${start} a ${end} de ${totalCount}`;
+
+  prevButton.disabled = pageNumber <= 1;
+  nextButton.disabled = end >= totalCount;
 }
 
 // ========== SAVED FILTERS ==========
@@ -421,7 +447,7 @@ function loadFilter(filter) {
 
   setFiltersToForm(filter);
 
-  loadOffers();
+  loadOffers(1);
 }
 
 // async function deleteSavedFilter(id) {
@@ -647,7 +673,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document
     .getElementById("applyFilters")
     ?.addEventListener("click", () => {
-      loadOffers();
+      loadOffers(1);
     });
 
   document
@@ -663,7 +689,21 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      loadOffers();
+      loadOffers(1);
+    });
+
+  document
+    .getElementById("prevPage")
+    ?.addEventListener("click", () => {
+      if (currentPage > 1) {
+        loadOffers(currentPage - 1);
+      }
+    });
+
+  document
+    .getElementById("nextPage")
+    ?.addEventListener("click", () => {
+      loadOffers(currentPage + 1);
     });
 
   // document
